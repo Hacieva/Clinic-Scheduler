@@ -1,9 +1,0 @@
-[build]
-  cmd = "go build -o ./tmp/bot ./cmd/bot"
-  bin = "./tmp/bot"
-  include_ext = ["go"]
-  exclude_dir = ["tmp", "vendor"]
-  delay = 500
-
-[log]
-  time = true

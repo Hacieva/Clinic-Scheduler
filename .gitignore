@@ -24,6 +24,9 @@ node_modules/
 # Docker
 *.override.yml
 
+# Claude Code
+.claude/
+
 # IDE
 .idea/
 .vscode/
