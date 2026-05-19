@@ -100,7 +100,7 @@ doctor_directions  [M2M]
 
 services
   id, doctor_id → doctors CASCADE, direction_id → directions CASCADE,
-  name, description, duration_minutes (>0), price, is_active, timestamps
+  name, description, duration_minutes (>0), price BIGINT (kopecks, nullable), is_active, timestamps
 
 doctor_working_hours
   id, doctor_id → doctors CASCADE, day_of_week(1-7),

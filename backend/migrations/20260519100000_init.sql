@@ -58,7 +58,7 @@ CREATE TABLE services (
     name             VARCHAR(255) NOT NULL,
     description      TEXT,
     duration_minutes INT NOT NULL CHECK (duration_minutes > 0),
-    price            DECIMAL(10, 2),
+    price            BIGINT,
     is_active        BOOLEAN NOT NULL DEFAULT true,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()

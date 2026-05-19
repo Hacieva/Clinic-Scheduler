@@ -1,0 +1,27 @@
+package model
+
+import "time"
+
+// Doctor mirrors the doctors table.
+type Doctor struct {
+	ID            int64     `json:"id"`
+	UserID        *int64    `json:"user_id"`
+	FirstName     string    `json:"first_name"`
+	LastName      string    `json:"last_name"`
+	MiddleName    *string   `json:"middle_name"`
+	Cabinet       *string   `json:"cabinet"`
+	BranchAddress *string   `json:"branch_address"`
+	Description   *string   `json:"description"`
+	PhotoURL      *string   `json:"photo_url"`
+	IsActive      bool      `json:"is_active"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// DoctorDirection mirrors the doctor_directions table (M2M junction).
+type DoctorDirection struct {
+	ID          int64     `json:"id"`
+	DoctorID    int64     `json:"doctor_id"`
+	DirectionID int64     `json:"direction_id"`
+	CreatedAt   time.Time `json:"created_at"`
+}
