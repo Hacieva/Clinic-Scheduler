@@ -58,6 +58,9 @@ func resolveIntervals(input CalculatorInput) []WorkingInterval {
 
 // slotsForInterval generates all non-conflicting slots within one working window.
 func slotsForInterval(iv WorkingInterval, input CalculatorInput) []Slot {
+	if input.SlotStep <= 0 {
+		return nil
+	}
 	var slots []Slot
 	for start := iv.Start; !start.Add(input.ServiceDuration).After(iv.End); start = start.Add(input.SlotStep) {
 		end := start.Add(input.ServiceDuration)
@@ -79,10 +82,10 @@ func overlapsAny(start, end time.Time, booked []Slot) bool {
 	return false
 }
 
-// sameDay reports whether a and b fall on the same calendar date.
+// sameDay reports whether a and b fall on the same calendar date in a's timezone.
 func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()
-	by, bm, bd := b.Date()
+	by, bm, bd := b.In(a.Location()).Date()
 	return ay == by && am == bm && ad == bd
 }
 

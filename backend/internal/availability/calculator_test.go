@@ -183,3 +183,53 @@ func TestCalculateSlots_BackToBackBookings(t *testing.T) {
 	assert.Equal(t, dt(11, 0), result[0].Start)
 	assert.Equal(t, dt(12, 0), result[0].End)
 }
+
+// TestCalculateSlots_ZeroStep: SlotStep=0 must return empty, not hang.
+func TestCalculateSlots_ZeroStep(t *testing.T) {
+	input := baseInput()
+	input.SlotStep = 0
+
+	result := Calculate(input)
+
+	assert.Empty(t, result)
+}
+
+// TestCalculateSlots_InvertedInterval: schedule End before Start → no slots.
+func TestCalculateSlots_InvertedInterval(t *testing.T) {
+	input := CalculatorInput{
+		Date:            refDate,
+		ServiceDuration: 60 * time.Minute,
+		SlotStep:        30 * time.Minute,
+		RegularSchedule: []RegularSchedule{
+			{DayOfWeek: time.Wednesday, Start: tod(14, 0), End: tod(10, 0)},
+		},
+	}
+
+	result := Calculate(input)
+
+	assert.Empty(t, result)
+}
+
+// TestResolveIntervals_CustomHoursNilEnd: custom_working_hours with nil End falls through to nil.
+func TestResolveIntervals_CustomHoursNilEnd(t *testing.T) {
+	start := tod(12, 0)
+	input := baseInput()
+	input.Exceptions = []Exception{
+		{Date: refDate, Type: "custom_working_hours", Start: &start, End: nil},
+	}
+
+	result := Calculate(input)
+
+	assert.Empty(t, result)
+}
+
+// TestSameDay_MixedTimezones: appointment stored as UTC must match a local-timezone day.
+// 2026-05-19 22:00 UTC = 2026-05-20 01:00 UTC+3 — same local calendar day.
+func TestSameDay_MixedTimezones(t *testing.T) {
+	loc := time.FixedZone("UTC+3", 3*3600)
+	dayLocal := time.Date(2026, 5, 20, 0, 0, 0, 0, loc)
+	apptUTC := time.Date(2026, 5, 19, 22, 0, 0, 0, time.UTC) // 01:00 May 20 in UTC+3
+
+	assert.True(t, sameDay(dayLocal, apptUTC))
+	assert.False(t, sameDay(dayLocal, time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)))
+}

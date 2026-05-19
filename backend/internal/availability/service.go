@@ -68,7 +68,7 @@ func (s *Service) GetAvailability(
 
 		var dayBooked []Slot
 		for _, a := range booked {
-			if sameDay(a.Start, day) {
+			if sameDay(day, a.Start) {
 				dayBooked = append(dayBooked, a)
 			}
 		}
