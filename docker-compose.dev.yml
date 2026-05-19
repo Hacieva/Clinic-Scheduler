@@ -5,8 +5,6 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./backend:/app
-    environment:
-      AIR_VERSION: "1.52.3"
     ports:
       - "8000:8000"
 
@@ -16,13 +14,11 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./bot:/app
-    ports: []
 
   frontend:
-    build: null
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
     volumes:
       - ./frontend:/app
     ports:
