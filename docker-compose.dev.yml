@@ -1,31 +1,4 @@
 services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ./backend:/app
-    ports:
-      - "8000:8000"
-
-  bot:
-    build:
-      context: ./bot
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ./bot:/app
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ./frontend:/app
-    ports:
-      - "5173:5173"
-    environment:
-      VITE_API_URL: http://localhost:8000
-
   postgres:
     ports:
       - "5432:5432"
