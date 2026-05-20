@@ -49,6 +49,10 @@ func main() {
 	authSvc := service.NewAuthService(userRepo, jwtSecret)
 	authHandler := handler.NewAuthHandler(authSvc)
 
+	directionRepo := repository.NewDirectionRepo(pool)
+	directionSvc := service.NewDirectionService(directionRepo)
+	directionHandler := handler.NewDirectionHandler(directionSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -66,6 +70,15 @@ func main() {
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
 			r.Post("/auth/change-password", authHandler.ChangePassword)
+
+			r.Get("/directions", directionHandler.List)
+			r.Get("/directions/{id}", directionHandler.GetByID)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole("admin"))
+				r.Post("/directions", directionHandler.Create)
+				r.Put("/directions/{id}", directionHandler.Update)
+				r.Delete("/directions/{id}", directionHandler.Delete)
+			})
 		})
 	})
 
