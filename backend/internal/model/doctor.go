@@ -25,3 +25,10 @@ type DoctorDirection struct {
 	DirectionID int64     `json:"direction_id"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+// DoctorWithDirections is the read model returned by queries that JOIN
+// doctors with their assigned directions.
+type DoctorWithDirections struct {
+	Doctor
+	Directions []Direction `json:"directions"`
+}
