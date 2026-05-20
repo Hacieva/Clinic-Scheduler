@@ -97,6 +97,7 @@ func main() {
 			r.Use(middleware.BotAuth(botSecret))
 			r.Post("/bot/appointments", apptHandler.BotCreate)
 			r.Post("/bot/appointments/{id}/cancel", apptHandler.BotCancel)
+			r.Get("/bot/availability", availHandler.GetAvailability)
 		})
 
 		r.Group(func(r chi.Router) {
