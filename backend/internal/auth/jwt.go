@@ -20,8 +20,9 @@ var (
 )
 
 type Claims struct {
-	UserID int64          `json:"user_id"`
-	Role   model.UserRole `json:"role"`
+	UserID    int64          `json:"user_id"`
+	Role      model.UserRole `json:"role"`
+	TokenType string         `json:"token_type"` // "access" | "refresh"
 	jwt.RegisteredClaims
 }
 
@@ -29,14 +30,14 @@ func GenerateAccessToken(userID int64, role model.UserRole, secret string) (stri
 	if secret == "" {
 		return "", ErrEmptySecret
 	}
-	return generate(userID, role, secret, accessTokenTTL)
+	return generate(userID, role, secret, accessTokenTTL, "access")
 }
 
 func GenerateRefreshToken(userID int64, role model.UserRole, secret string) (string, error) {
 	if secret == "" {
 		return "", ErrEmptySecret
 	}
-	return generate(userID, role, secret, refreshTokenTTL)
+	return generate(userID, role, secret, refreshTokenTTL, "refresh")
 }
 
 func ValidateToken(tokenStr, secret string) (*Claims, error) {
@@ -62,10 +63,11 @@ func ValidateToken(tokenStr, secret string) (*Claims, error) {
 	return claims, nil
 }
 
-func generate(userID int64, role model.UserRole, secret string, ttl time.Duration) (string, error) {
+func generate(userID int64, role model.UserRole, secret string, ttl time.Duration, tokenType string) (string, error) {
 	claims := &Claims{
-		UserID: userID,
-		Role:   role,
+		UserID:    userID,
+		Role:      role,
+		TokenType: tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

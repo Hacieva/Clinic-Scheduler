@@ -22,6 +22,7 @@ func TestGenerateAndValidate_AccessToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(42), claims.UserID)
 	assert.Equal(t, model.RoleAdmin, claims.Role)
+	assert.Equal(t, "access", claims.TokenType)
 }
 
 func TestGenerateAndValidate_RefreshToken(t *testing.T) {
@@ -33,6 +34,7 @@ func TestGenerateAndValidate_RefreshToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), claims.UserID)
 	assert.Equal(t, model.RoleDoctor, claims.Role)
+	assert.Equal(t, "refresh", claims.TokenType)
 }
 
 func TestValidateToken_WrongSecret(t *testing.T) {
@@ -72,6 +74,22 @@ func TestValidateToken_Tampered(t *testing.T) {
 
 	_, err = ValidateToken(tampered, testSecret)
 	assert.ErrorIs(t, err, ErrInvalidToken)
+}
+
+func TestTokenTypes_Distinct(t *testing.T) {
+	access, err := GenerateAccessToken(1, model.RoleAdmin, testSecret)
+	require.NoError(t, err)
+	refresh, err := GenerateRefreshToken(1, model.RoleAdmin, testSecret)
+	require.NoError(t, err)
+
+	accessClaims, err := ValidateToken(access, testSecret)
+	require.NoError(t, err)
+	refreshClaims, err := ValidateToken(refresh, testSecret)
+	require.NoError(t, err)
+
+	assert.Equal(t, "access", accessClaims.TokenType)
+	assert.Equal(t, "refresh", refreshClaims.TokenType)
+	assert.NotEqual(t, accessClaims.TokenType, refreshClaims.TokenType)
 }
 
 func TestGenerateAccessToken_EmptySecret(t *testing.T) {

@@ -29,6 +29,10 @@ func Authenticate(jwtSecret string) func(http.Handler) http.Handler {
 				writeUnauthorized(w)
 				return
 			}
+			if claims.TokenType != "access" {
+				writeUnauthorized(w)
+				return
+			}
 			ctx := context.WithValue(r.Context(), claimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
