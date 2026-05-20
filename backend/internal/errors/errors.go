@@ -24,4 +24,7 @@ var (
 
 	// Schedule validation
 	ErrInvalidSchedule = errors.New("invalid schedule parameters")
+
+	// Appointment status machine
+	ErrInvalidStatusTransition = errors.New("invalid status transition")
 )
