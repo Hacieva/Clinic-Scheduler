@@ -62,6 +62,10 @@ func (m *mockDoctorRepo) SetDirections(_ context.Context, _ int64, _ []int64) er
 	return m.err
 }
 
+func (m *mockDoctorRepo) GetDoctorIDByUserID(_ context.Context, _ int64) (int64, error) {
+	return 0, m.err
+}
+
 func sampleDoctorWithDirections() *model.DoctorWithDirections {
 	return &model.DoctorWithDirections{
 		Doctor: model.Doctor{

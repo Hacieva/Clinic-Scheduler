@@ -16,6 +16,7 @@ import (
 type DoctorRepository interface {
 	List(ctx context.Context) ([]model.DoctorWithDirections, error)
 	GetByID(ctx context.Context, id int64) (*model.DoctorWithDirections, error)
+	GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error)
 	Create(ctx context.Context, input CreateDoctorInput) (*model.Doctor, error)
 	Update(ctx context.Context, id int64, input UpdateDoctorInput) (*model.Doctor, error)
 	SoftDelete(ctx context.Context, id int64) error
@@ -201,6 +202,21 @@ func (r *DoctorRepo) CreateAccount(ctx context.Context, doctorID int64, email, p
 		return nil, err
 	}
 	return d, nil
+}
+
+// GetDoctorIDByUserID returns the doctor's primary key for a given user account.
+// Used to resolve a JWT user_id to doctor_id for doctor-facing endpoints.
+func (r *DoctorRepo) GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error) {
+	var doctorID int64
+	err := r.db.QueryRow(ctx,
+		`SELECT id FROM doctors WHERE user_id = $1`, userID).Scan(&doctorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, apperrors.ErrNotFound
+		}
+		return 0, err
+	}
+	return doctorID, nil
 }
 
 // SetDirections atomically replaces all directions assigned to the doctor.

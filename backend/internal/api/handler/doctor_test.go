@@ -66,6 +66,10 @@ func (m *mockDoctorRepo) SetDirections(_ context.Context, _ int64, _ []int64) er
 	return m.err
 }
 
+func (m *mockDoctorRepo) GetDoctorIDByUserID(_ context.Context, _ int64) (int64, error) {
+	return 0, m.err
+}
+
 func newDoctorRouter(docRepo *mockDoctorRepo, dirRepo *mockDirectionRepo) http.Handler {
 	svc := service.NewDoctorService(docRepo, dirRepo)
 	h := NewDoctorHandler(svc)
