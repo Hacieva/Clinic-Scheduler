@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hacieva/clinic-scheduler/backend/internal/api/handler"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/api/middleware"
+	"github.com/Hacieva/clinic-scheduler/backend/internal/availability"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/repository"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/service"
 )
@@ -65,6 +66,10 @@ func main() {
 	scheduleSvc := service.NewScheduleService(scheduleRepo)
 	scheduleHandler := handler.NewScheduleHandler(scheduleSvc)
 
+	apptSlotRepo := repository.NewAppointmentSlotRepo(pool)
+	availSvc := availability.NewService(scheduleRepo, apptSlotRepo, serviceRepo)
+	availHandler := handler.NewAvailabilityHandler(availSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -91,6 +96,7 @@ func main() {
 			r.Get("/doctors/{id}/services/{serviceId}", serviceHandler.GetByID)
 			r.Get("/doctors/{id}/working-hours", scheduleHandler.ListWorkingHours)
 			r.Get("/doctors/{id}/exceptions", scheduleHandler.ListExceptions)
+			r.Get("/availability", availHandler.GetAvailability)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
 				r.Post("/directions", directionHandler.Create)

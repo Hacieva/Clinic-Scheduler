@@ -36,6 +36,12 @@ func NewService(sr ScheduleRepository, ar AppointmentRepository, svcr ServiceRep
 	}
 }
 
+// GetServiceDuration returns the service duration in minutes.
+// Used by callers that need to include duration metadata alongside availability results.
+func (s *Service) GetServiceDuration(ctx context.Context, serviceID int64) (int, error) {
+	return s.serviceRepo.GetDurationMinutes(ctx, serviceID)
+}
+
 // GetAvailability returns available slots for doctorID/serviceID across [from, to].
 func (s *Service) GetAvailability(
 	ctx context.Context,
