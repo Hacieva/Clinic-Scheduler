@@ -154,3 +154,8 @@ func (s *AppointmentService) Complete(ctx context.Context, id int64, changedByUs
 func (s *AppointmentService) MarkNoShow(ctx context.Context, id int64, changedByUserID *int64) error {
 	return s.changeStatus(ctx, id, model.StatusNoShow, changedByUserID, nil)
 }
+
+// GetDoctorIDByUserID resolves the doctor record for a given JWT user_id.
+func (s *AppointmentService) GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error) {
+	return s.doctorRepo.GetDoctorIDByUserID(ctx, userID)
+}

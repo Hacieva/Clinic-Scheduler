@@ -39,6 +39,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	botSecret := os.Getenv("BOT_API_SECRET")
+	if botSecret == "" {
+		slog.Warn("BOT_API_SECRET is not set — bot endpoints will reject all requests")
+	}
+
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
@@ -70,6 +75,10 @@ func main() {
 	availSvc := availability.NewService(scheduleRepo, apptSlotRepo, serviceRepo)
 	availHandler := handler.NewAvailabilityHandler(availSvc)
 
+	apptRepo := repository.NewAppointmentRepo(pool)
+	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo)
+	apptHandler := handler.NewAppointmentHandler(apptSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -82,6 +91,14 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/login", authHandler.Login)
 		r.Post("/auth/refresh", authHandler.Refresh)
+
+		// Bot endpoints — X-Bot-Token auth, no JWT
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.BotAuth(botSecret))
+			r.Post("/bot/appointments", apptHandler.BotCreate)
+			r.Post("/bot/appointments/{id}/cancel", apptHandler.BotCancel)
+		})
+
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Authenticate(jwtSecret))
 			r.Post("/auth/logout", authHandler.Logout)
@@ -97,6 +114,14 @@ func main() {
 			r.Get("/doctors/{id}/working-hours", scheduleHandler.ListWorkingHours)
 			r.Get("/doctors/{id}/exceptions", scheduleHandler.ListExceptions)
 			r.Get("/availability", availHandler.GetAvailability)
+
+			// Doctor-only appointment routes (privacy trimmed, doctor_id from JWT)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole("doctor"))
+				r.Get("/doctor/appointments", apptHandler.DoctorList)
+				r.Get("/doctor/appointments/{id}", apptHandler.DoctorGetByID)
+			})
+
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
 				r.Post("/directions", directionHandler.Create)
@@ -114,6 +139,13 @@ func main() {
 				r.Post("/doctors/{id}/exceptions", scheduleHandler.CreateException)
 				r.Put("/doctors/{id}/exceptions/{exId}", scheduleHandler.UpdateException)
 				r.Delete("/doctors/{id}/exceptions/{exId}", scheduleHandler.DeleteException)
+				r.Post("/appointments", apptHandler.AdminCreate)
+				r.Get("/appointments", apptHandler.List)
+				r.Get("/appointments/{id}", apptHandler.GetByID)
+				r.Post("/appointments/{id}/confirm", apptHandler.Confirm)
+				r.Post("/appointments/{id}/cancel", apptHandler.AdminCancel)
+				r.Post("/appointments/{id}/complete", apptHandler.Complete)
+				r.Post("/appointments/{id}/no-show", apptHandler.MarkNoShow)
 			})
 		})
 	})
