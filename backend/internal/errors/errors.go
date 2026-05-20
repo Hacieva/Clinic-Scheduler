@@ -21,4 +21,7 @@ var (
 
 	// Services
 	ErrDirectionMismatch = errors.New("direction does not belong to doctor")
+
+	// Schedule validation
+	ErrInvalidSchedule = errors.New("invalid schedule parameters")
 )

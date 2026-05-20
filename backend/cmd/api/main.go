@@ -61,6 +61,10 @@ func main() {
 	medicalSvc := service.NewMedicalServiceService(serviceRepo, doctorRepo)
 	serviceHandler := handler.NewServiceHandler(medicalSvc)
 
+	scheduleRepo := repository.NewScheduleRepo(pool)
+	scheduleSvc := service.NewScheduleService(scheduleRepo)
+	scheduleHandler := handler.NewScheduleHandler(scheduleSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -85,6 +89,8 @@ func main() {
 			r.Get("/doctors/{id}", doctorHandler.GetByID)
 			r.Get("/doctors/{id}/services", serviceHandler.List)
 			r.Get("/doctors/{id}/services/{serviceId}", serviceHandler.GetByID)
+			r.Get("/doctors/{id}/working-hours", scheduleHandler.ListWorkingHours)
+			r.Get("/doctors/{id}/exceptions", scheduleHandler.ListExceptions)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
 				r.Post("/directions", directionHandler.Create)
@@ -98,6 +104,10 @@ func main() {
 				r.Post("/doctors/{id}/services", serviceHandler.Create)
 				r.Put("/doctors/{id}/services/{serviceId}", serviceHandler.Update)
 				r.Delete("/doctors/{id}/services/{serviceId}", serviceHandler.Delete)
+				r.Put("/doctors/{id}/working-hours", scheduleHandler.ReplaceWorkingHours)
+				r.Post("/doctors/{id}/exceptions", scheduleHandler.CreateException)
+				r.Put("/doctors/{id}/exceptions/{exId}", scheduleHandler.UpdateException)
+				r.Delete("/doctors/{id}/exceptions/{exId}", scheduleHandler.DeleteException)
 			})
 		})
 	})
