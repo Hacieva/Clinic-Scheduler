@@ -32,6 +32,10 @@ func (m *mockUserRepo) GetByID(_ context.Context, _ int64) (*model.User, error) 
 	return m.user, m.err
 }
 
+func (m *mockUserRepo) UpdatePassword(_ context.Context, _ int64, _ string) error {
+	return nil
+}
+
 const (
 	testSecret   = "handler-integration-test-secret"
 	testPassword = "ValidPass1!"

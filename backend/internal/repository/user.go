@@ -14,6 +14,7 @@ import (
 type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	GetByID(ctx context.Context, id int64) (*model.User, error)
+	UpdatePassword(ctx context.Context, userID int64, passwordHash string) error
 }
 
 type UserRepo struct {
@@ -54,4 +55,17 @@ func (r *UserRepo) GetByID(ctx context.Context, id int64) (*model.User, error) {
 		return nil, err
 	}
 	return u, nil
+}
+
+func (r *UserRepo) UpdatePassword(ctx context.Context, userID int64, passwordHash string) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE users SET password_hash = $1, updated_at = NOW()
+		WHERE  id = $2`, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return apperrors.ErrNotFound
+	}
+	return nil
 }
