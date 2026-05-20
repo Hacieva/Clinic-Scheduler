@@ -18,4 +18,7 @@ var (
 	ErrSlotTaken      = errors.New("time slot already taken")
 	ErrOutsideHours   = errors.New("outside working hours")
 	ErrDoctorInactive = errors.New("doctor is inactive")
+
+	// Services
+	ErrDirectionMismatch = errors.New("direction does not belong to doctor")
 )
