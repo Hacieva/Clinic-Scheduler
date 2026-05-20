@@ -53,6 +53,10 @@ func main() {
 	directionSvc := service.NewDirectionService(directionRepo)
 	directionHandler := handler.NewDirectionHandler(directionSvc)
 
+	doctorRepo := repository.NewDoctorRepo(pool)
+	doctorSvc := service.NewDoctorService(doctorRepo, directionRepo)
+	doctorHandler := handler.NewDoctorHandler(doctorSvc)
+
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -73,11 +77,18 @@ func main() {
 
 			r.Get("/directions", directionHandler.List)
 			r.Get("/directions/{id}", directionHandler.GetByID)
+			r.Get("/doctors", doctorHandler.List)
+			r.Get("/doctors/{id}", doctorHandler.GetByID)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole("admin"))
 				r.Post("/directions", directionHandler.Create)
 				r.Put("/directions/{id}", directionHandler.Update)
 				r.Delete("/directions/{id}", directionHandler.Delete)
+				r.Post("/doctors", doctorHandler.Create)
+				r.Patch("/doctors/{id}", doctorHandler.Update)
+				r.Delete("/doctors/{id}", doctorHandler.Delete)
+				r.Post("/doctors/{id}/account", doctorHandler.CreateAccount)
+				r.Put("/doctors/{id}/directions", doctorHandler.SetDirections)
 			})
 		})
 	})

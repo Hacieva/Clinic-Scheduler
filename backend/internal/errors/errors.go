@@ -11,7 +11,8 @@ var (
 	ErrInactiveUser = errors.New("user is inactive")
 
 	// CRUD
-	ErrConflict = errors.New("conflict")
+	ErrConflict      = errors.New("conflict")
+	ErrAccountExists = errors.New("doctor already has an account")
 
 	// Scheduling (CLAUDE.md §3.2)
 	ErrSlotTaken      = errors.New("time slot already taken")
