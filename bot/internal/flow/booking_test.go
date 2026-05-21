@@ -416,6 +416,37 @@ func TestHandle_NoSession_PromptsStart(t *testing.T) {
 	}
 }
 
+func TestHandle_Help_SendsHelpText_NoSessionChange(t *testing.T) {
+	sess := &mockSession{data: &session.Data{State: StateChooseDoctor}}
+	h, s := newHandler(sess, &mockAPI{})
+
+	h.Handle(context.Background(), cmdUpdate("help"))
+
+	if len(s.texts) != 1 || !strings.Contains(s.texts[0], "/start") {
+		t.Errorf("expected help text containing /start, got %v", s.texts)
+	}
+	if len(s.keyboards) != 0 {
+		t.Errorf("help must not send a keyboard, got %d", len(s.keyboards))
+	}
+	if sess.data == nil || sess.data.State != StateChooseDoctor {
+		t.Errorf("/help must not modify session state, got %v", sess.data)
+	}
+}
+
+func TestHandle_Help_NoSession_SendsHelpText(t *testing.T) {
+	sess := &mockSession{data: nil}
+	h, s := newHandler(sess, &mockAPI{})
+
+	h.Handle(context.Background(), cmdUpdate("help"))
+
+	if len(s.texts) != 1 || !strings.Contains(s.texts[0], "/start") {
+		t.Errorf("expected help text, got %v", s.texts)
+	}
+	if sess.data != nil {
+		t.Errorf("/help must not create session, got %+v", sess.data)
+	}
+}
+
 func TestHandle_APITemporaryError_SendsFriendlyMessage(t *testing.T) {
 	sess := &mockSession{}
 	api := &mockAPI{err: client.ErrTemporary}

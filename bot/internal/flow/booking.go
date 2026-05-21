@@ -70,6 +70,13 @@ func (h *Handler) Handle(ctx context.Context, u Update) {
 		return
 	}
 
+	// — /help — informational, does not touch session —
+	if u.Command == "help" {
+		h.answerIfNeeded(ctx, u)
+		_ = h.sender.SendText(ctx, u.ChatID, msgHelp)
+		return
+	}
+
 	// — /start always resets the flow regardless of current state —
 	if u.Command == "start" {
 		h.enterStart(ctx, u)
@@ -628,3 +635,5 @@ func nameAndPriceFromServices(svcs []client.Service, id int64) (string, *int64) 
 }
 
 const msgTryAgain = "Что-то пошло не так. Попробуйте позже или начните заново: /start"
+
+const msgHelp = "Этот бот помогает записаться на приём к врачу.\n\nКоманды:\n/start — начать запись\n/cancel — отменить текущую запись\n/help — эта справка"
