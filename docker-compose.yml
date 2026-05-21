@@ -23,6 +23,7 @@ services:
       PORT: "8000"
       DATABASE_URL: postgres://${POSTGRES_USER:-clinic}:${POSTGRES_PASSWORD:-clinic_pass}@postgres:5432/${POSTGRES_DB:-clinic_db}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      BOT_API_SECRET: ${BOT_API_SECRET:-change_me_bot_secret}
     ports:
       - "8000:8000"
     networks:
@@ -30,18 +31,27 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   bot:
     build:
       context: ./bot
       dockerfile: Dockerfile
     environment:
-      BOT_TOKEN: ${BOT_TOKEN:-}
-      API_URL: ${API_URL:-http://backend:8000}
+      BOT_TOKEN: ${BOT_TOKEN}
+      DATABASE_URL: postgres://${POSTGRES_USER:-clinic}:${POSTGRES_PASSWORD:-clinic_pass}@postgres:5432/${POSTGRES_DB:-clinic_db}?sslmode=disable
+      BACKEND_URL: http://backend:8000
+      BOT_API_SECRET: ${BOT_API_SECRET:-change_me_bot_secret}
     networks:
       - clinic_net
     depends_on:
       postgres:
+        condition: service_healthy
+      backend:
         condition: service_healthy
 
   frontend:
