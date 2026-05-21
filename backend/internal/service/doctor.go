@@ -28,8 +28,8 @@ type DoctorInput struct {
 	PhotoURL      *string
 }
 
-func (s *DoctorService) List(ctx context.Context) ([]model.DoctorWithDirections, error) {
-	return s.repo.List(ctx)
+func (s *DoctorService) List(ctx context.Context, directionID *int64) ([]model.DoctorWithDirections, error) {
+	return s.repo.List(ctx, directionID)
 }
 
 func (s *DoctorService) GetByID(ctx context.Context, id int64) (*model.DoctorWithDirections, error) {

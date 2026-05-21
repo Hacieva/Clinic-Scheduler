@@ -14,7 +14,7 @@ import (
 )
 
 type DoctorRepository interface {
-	List(ctx context.Context) ([]model.DoctorWithDirections, error)
+	List(ctx context.Context, directionID *int64) ([]model.DoctorWithDirections, error)
 	GetByID(ctx context.Context, id int64) (*model.DoctorWithDirections, error)
 	GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error)
 	Create(ctx context.Context, input CreateDoctorInput) (*model.Doctor, error)
@@ -44,7 +44,9 @@ func NewDoctorRepo(db *pgxpool.Pool) *DoctorRepo {
 	return &DoctorRepo{db: db}
 }
 
-func (r *DoctorRepo) List(ctx context.Context) ([]model.DoctorWithDirections, error) {
+// List returns all doctors, optionally filtered by direction.
+// When directionID is nil the full list is returned (existing behaviour preserved).
+func (r *DoctorRepo) List(ctx context.Context, directionID *int64) ([]model.DoctorWithDirections, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.user_id, d.first_name, d.last_name, d.middle_name,
 		       d.cabinet, d.branch_address, d.description, d.photo_url,
@@ -53,7 +55,11 @@ func (r *DoctorRepo) List(ctx context.Context) ([]model.DoctorWithDirections, er
 		FROM   doctors d
 		LEFT   JOIN doctor_directions dd ON dd.doctor_id = d.id
 		LEFT   JOIN directions dir ON dir.id = dd.direction_id
-		ORDER  BY d.id, dir.id`)
+		WHERE  ($1::bigint IS NULL OR EXISTS (
+		           SELECT 1 FROM doctor_directions
+		           WHERE  doctor_id = d.id AND direction_id = $1
+		       ))
+		ORDER  BY d.id, dir.id`, directionID)
 	if err != nil {
 		return nil, err
 	}

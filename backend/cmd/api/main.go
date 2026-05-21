@@ -95,6 +95,9 @@ func main() {
 		// Bot endpoints — X-Bot-Token auth, no JWT
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.BotAuth(botSecret))
+			r.Get("/bot/directions", directionHandler.List)
+			r.Get("/bot/doctors", doctorHandler.List)
+			r.Get("/bot/doctors/{id}/services", serviceHandler.List)
 			r.Post("/bot/appointments", apptHandler.BotCreate)
 			r.Post("/bot/appointments/{id}/cancel", apptHandler.BotCancel)
 			r.Get("/bot/availability", availHandler.GetAvailability)

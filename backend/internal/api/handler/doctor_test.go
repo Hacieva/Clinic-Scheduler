@@ -26,7 +26,7 @@ type mockDoctorRepo struct {
 	err        error
 }
 
-func (m *mockDoctorRepo) List(_ context.Context) ([]model.DoctorWithDirections, error) {
+func (m *mockDoctorRepo) List(_ context.Context, _ *int64) ([]model.DoctorWithDirections, error) {
 	return m.doctors, m.err
 }
 

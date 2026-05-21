@@ -22,7 +22,7 @@ type mockDoctorRepo struct {
 	err        error
 }
 
-func (m *mockDoctorRepo) List(_ context.Context) ([]model.DoctorWithDirections, error) {
+func (m *mockDoctorRepo) List(_ context.Context, _ *int64) ([]model.DoctorWithDirections, error) {
 	return m.doctors, m.err
 }
 
@@ -82,7 +82,7 @@ func TestDoctorList_Success(t *testing.T) {
 	dw := sampleDoctorWithDirections()
 	svc := NewDoctorService(&mockDoctorRepo{doctors: []model.DoctorWithDirections{*dw}}, &mockDirectionRepo{})
 
-	result, err := svc.List(context.Background())
+	result, err := svc.List(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "John", result[0].FirstName)
@@ -91,7 +91,7 @@ func TestDoctorList_Success(t *testing.T) {
 func TestDoctorList_Empty(t *testing.T) {
 	svc := NewDoctorService(&mockDoctorRepo{doctors: []model.DoctorWithDirections{}}, &mockDirectionRepo{})
 
-	result, err := svc.List(context.Background())
+	result, err := svc.List(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }

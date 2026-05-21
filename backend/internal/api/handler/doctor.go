@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	apperrors "github.com/Hacieva/clinic-scheduler/backend/internal/errors"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/auth"
@@ -38,7 +39,16 @@ type setDirectionsRequest struct {
 }
 
 func (h *DoctorHandler) List(w http.ResponseWriter, r *http.Request) {
-	docs, err := h.svc.List(r.Context())
+	var directionID *int64
+	if v := r.URL.Query().Get("direction_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid direction_id"})
+			return
+		}
+		directionID = &id
+	}
+	docs, err := h.svc.List(r.Context(), directionID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
