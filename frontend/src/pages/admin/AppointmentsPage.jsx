@@ -596,13 +596,13 @@ export default function AppointmentsPage() {
   // ── Action handlers (passed down to table as explicit callbacks) ──
 
   const handleConfirm = (row) =>
-    setSimpleAction({ row, action: 'confirm', title: 'Подтвердить запись', confirmLabel: 'Подтвердить' })
+    setSimpleAction({ row, action: 'confirm', title: 'Подтвердить запись', confirmLabel: 'Подтвердить', confirmVariant: 'primary' })
 
   const handleComplete = (row) =>
-    setSimpleAction({ row, action: 'complete', title: 'Завершить запись', confirmLabel: 'Завершить' })
+    setSimpleAction({ row, action: 'complete', title: 'Завершить запись', confirmLabel: 'Завершить', confirmVariant: 'success' })
 
   const handleNoShow = (row) =>
-    setSimpleAction({ row, action: 'noShow', title: 'Отметить как «Не пришёл»', confirmLabel: 'Отметить' })
+    setSimpleAction({ row, action: 'noShow', title: 'Отметить как «Не пришёл»', confirmLabel: 'Отметить', confirmVariant: 'warning' })
 
   const handleSimpleConfirm = () => {
     if (!simpleAction) return
@@ -691,6 +691,7 @@ export default function AppointmentsPage() {
         title={simpleAction?.title ?? ''}
         message={simpleActionMessage}
         confirmLabel={simpleAction?.confirmLabel ?? 'Подтвердить'}
+        confirmVariant={simpleAction?.confirmVariant ?? 'primary'}
         isLoading={isSimpleActionPending}
       />
     </div>

@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { Stethoscope } from 'lucide-react'
 import { login } from '../api/auth'
 import useAuthStore from '../stores/auth'
 
@@ -46,9 +47,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 w-full max-w-sm">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-6">Вход</h1>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-8">
+          <div className="flex items-center justify-center w-12 h-12 bg-blue-600 rounded-2xl mb-4 shadow-md">
+            <Stethoscope size={24} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-semibold text-gray-900">Clinic Scheduler</h1>
+          <p className="text-sm text-gray-500 mt-1">Панель управления</p>
+        </div>
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-6">Вход в систему</h2>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -86,6 +95,7 @@ export default function LoginPage() {
             {isSubmitting ? 'Вход...' : 'Войти'}
           </button>
         </form>
+      </div>
       </div>
     </div>
   )
