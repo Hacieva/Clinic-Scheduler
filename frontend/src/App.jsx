@@ -1,12 +1,26 @@
-function App() {
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import LoginPage from './pages/LoginPage'
+import RequireAuth from './components/RequireAuth'
+
+export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-gray-900">Clinic Scheduler</h1>
-        <p className="mt-4 text-gray-600">Admin panel loading...</p>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth allowedRoles={['admin']} />}>
+          <Route
+            path="/admin/*"
+            element={<div className="p-8 text-gray-500">Admin panel — coming soon</div>}
+          />
+        </Route>
+        <Route element={<RequireAuth allowedRoles={['doctor']} />}>
+          <Route
+            path="/doctor/*"
+            element={<div className="p-8 text-gray-500">Doctor panel — coming soon</div>}
+          />
+        </Route>
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
-
-export default App
