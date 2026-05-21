@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import DirectionsPage from './pages/admin/DirectionsPage'
+import DoctorsPage from './pages/admin/DoctorsPage'
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route element={<RequireAuth allowedRoles={['admin']} />}>
           <Route element={<Layout />}>
             <Route path="/admin/directions" element={<DirectionsPage />} />
+            <Route path="/admin/doctors" element={<DoctorsPage />} />
             <Route path="/admin" element={<Navigate to="/admin/directions" replace />} />
           </Route>
         </Route>

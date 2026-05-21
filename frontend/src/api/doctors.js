@@ -1,0 +1,16 @@
+import client from './client'
+
+export const getDoctors = () =>
+  client.get('/doctors').then((r) => r.data)
+
+export const createDoctor = (data) =>
+  client.post('/doctors', data).then((r) => r.data)
+
+export const updateDoctor = (id, data) =>
+  client.patch(`/doctors/${id}`, data).then((r) => r.data)
+
+export const deleteDoctor = (id) =>
+  client.delete(`/doctors/${id}`)
+
+export const setDoctorDirections = (id, directionIds) =>
+  client.put(`/doctors/${id}/directions`, { direction_ids: directionIds })
