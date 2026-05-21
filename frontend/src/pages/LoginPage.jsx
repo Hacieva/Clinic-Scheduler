@@ -39,7 +39,7 @@ export default function LoginPage() {
       if (data.user.role === 'admin') {
         navigate('/admin/directions', { replace: true })
       } else {
-        navigate('/doctor/appointments', { replace: true })
+        navigate('/doctor/schedule', { replace: true })
       }
     } catch (err) {
       toast.error(getErrorMessage(err))

@@ -6,6 +6,7 @@ import DirectionsPage from './pages/admin/DirectionsPage'
 import DoctorsPage from './pages/admin/DoctorsPage'
 import DoctorDetailPage from './pages/admin/DoctorDetailPage'
 import AppointmentsPage from './pages/admin/AppointmentsPage'
+import SchedulePage from './pages/doctor/SchedulePage'
 
 export default function App() {
   return (
@@ -24,12 +25,12 @@ export default function App() {
           </Route>
         </Route>
 
-        {/* Doctor routes — placeholder until 8.3+ */}
+        {/* Doctor routes */}
         <Route element={<RequireAuth allowedRoles={['doctor']} />}>
-          <Route
-            path="/doctor/*"
-            element={<div className="p-8 text-gray-500">Doctor panel — coming soon</div>}
-          />
+          <Route element={<Layout />}>
+            <Route path="/doctor/schedule" element={<SchedulePage />} />
+            <Route path="/doctor" element={<Navigate to="/doctor/schedule" replace />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

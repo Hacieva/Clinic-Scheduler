@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { BookOpen, Users, Stethoscope, ClipboardList, LogOut } from 'lucide-react'
+import { BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useAuthStore from '../stores/auth'
 import { logout } from '../api/auth'
@@ -10,10 +10,15 @@ const adminNav = [
   { to: '/admin/appointments', label: 'Записи', icon: ClipboardList },
 ]
 
+const doctorNav = [
+  { to: '/doctor/schedule', label: 'Расписание', icon: CalendarDays },
+]
+
 export default function Layout() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const clearTokens = useAuthStore((s) => s.clearTokens)
+  const nav = user?.role === 'doctor' ? doctorNav : adminNav
 
   const handleLogout = async () => {
     try {
@@ -39,7 +44,7 @@ export default function Layout() {
           <p className="text-xs text-gray-400 truncate">{user?.email}</p>
         </div>
         <nav className="flex-1 p-4 space-y-1">
-          {adminNav.map(({ to, label, icon: Icon }) => (
+          {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}

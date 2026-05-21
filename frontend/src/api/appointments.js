@@ -17,3 +17,6 @@ export const completeAppointment = (id) =>
 
 export const noShowAppointment = (id) =>
   client.post(`/appointments/${id}/no-show`)
+
+export const getDoctorAppointments = (params) =>
+  client.get('/doctor/appointments', { params }).then((r) => r.data)
