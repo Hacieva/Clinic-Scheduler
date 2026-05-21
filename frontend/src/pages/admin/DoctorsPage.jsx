@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   getDoctors,
@@ -180,6 +181,7 @@ function fullName(row) {
 
 export default function DoctorsPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -278,6 +280,13 @@ export default function DoctorsPage() {
       label: '',
       render: (row) => (
         <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={() => navigate(`/admin/doctors/${row.id}`)}
+            className="p-1.5 text-gray-400 hover:text-gray-700 rounded transition-colors"
+            title="Открыть"
+          >
+            <ExternalLink size={15} />
+          </button>
           <button
             onClick={() => setEditTarget(row)}
             className="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors"

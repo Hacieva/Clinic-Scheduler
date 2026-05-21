@@ -4,6 +4,7 @@ import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import DirectionsPage from './pages/admin/DirectionsPage'
 import DoctorsPage from './pages/admin/DoctorsPage'
+import DoctorDetailPage from './pages/admin/DoctorDetailPage'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route element={<Layout />}>
             <Route path="/admin/directions" element={<DirectionsPage />} />
             <Route path="/admin/doctors" element={<DoctorsPage />} />
+            <Route path="/admin/doctors/:id" element={<DoctorDetailPage />} />
             <Route path="/admin" element={<Navigate to="/admin/directions" replace />} />
           </Route>
         </Route>
