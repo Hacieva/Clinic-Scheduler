@@ -202,7 +202,7 @@ func TestLogin_WrongMethod(t *testing.T) {
 func TestRefresh_Success(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, testSecret)
+	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/refresh",
@@ -242,7 +242,7 @@ func TestRefresh_InvalidToken(t *testing.T) {
 func TestRefresh_AccessTokenRejected(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/refresh",
@@ -271,7 +271,7 @@ func TestRefresh_InactiveUser(t *testing.T) {
 	user.IsActive = false
 	router := newTestRouter(&mockUserRepo{user: user})
 
-	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, testSecret)
+	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/refresh",
@@ -289,7 +289,7 @@ func TestRefresh_InactiveUser(t *testing.T) {
 func TestLogout_Success(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/logout", "", accessToken)
@@ -311,7 +311,7 @@ func TestLogout_NoToken(t *testing.T) {
 func TestLogout_WithRefreshToken(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, testSecret)
+	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/logout", "", refreshToken)
@@ -324,7 +324,7 @@ func TestLogout_WithRefreshToken(t *testing.T) {
 func TestMe_Success(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodGet, "/api/v1/auth/me", "", accessToken)
@@ -354,7 +354,7 @@ func TestMe_NoToken(t *testing.T) {
 func TestMe_WithRefreshToken(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, testSecret)
+	refreshToken, err := auth.GenerateRefreshToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodGet, "/api/v1/auth/me", "", refreshToken)
@@ -367,7 +367,7 @@ func TestMe_WithRefreshToken(t *testing.T) {
 func TestChangePassword_Success(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/change-password",
@@ -379,7 +379,7 @@ func TestChangePassword_Success(t *testing.T) {
 func TestChangePassword_WrongCurrent(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/change-password",
@@ -395,7 +395,7 @@ func TestChangePassword_WrongCurrent(t *testing.T) {
 func TestChangePassword_WeakNew(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	rr := bearerReq(router, http.MethodPost, "/api/v1/auth/change-password",
@@ -411,7 +411,7 @@ func TestChangePassword_WeakNew(t *testing.T) {
 func TestChangePassword_MissingFields(t *testing.T) {
 	router := newTestRouter(&mockUserRepo{user: activeUser()})
 
-	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	accessToken, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	cases := []struct {

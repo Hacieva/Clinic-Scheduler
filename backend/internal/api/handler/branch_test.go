@@ -66,7 +66,7 @@ func (m *mockBranchRepo) HasActiveDoctors(_ context.Context, _ int64) (bool, err
 
 func ownerToken(t *testing.T) string {
 	t.Helper()
-	tok, err := auth.GenerateAccessToken(44, model.RoleOwner, testSecret)
+	tok, err := auth.GenerateAccessToken(44, model.RoleOwner, nil, testSecret)
 	require.NoError(t, err)
 	return tok
 }

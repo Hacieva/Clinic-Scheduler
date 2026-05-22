@@ -14,7 +14,7 @@ import (
 const testSecret = "test-secret-key"
 
 func TestGenerateAndValidate_AccessToken(t *testing.T) {
-	token, err := GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	token, err := GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -23,10 +23,11 @@ func TestGenerateAndValidate_AccessToken(t *testing.T) {
 	assert.Equal(t, int64(42), claims.UserID)
 	assert.Equal(t, model.RoleAdmin, claims.Role)
 	assert.Equal(t, "access", claims.TokenType)
+	assert.Nil(t, claims.BranchIDs)
 }
 
 func TestGenerateAndValidate_RefreshToken(t *testing.T) {
-	token, err := GenerateRefreshToken(7, model.RoleDoctor, testSecret)
+	token, err := GenerateRefreshToken(7, model.RoleDoctor, nil, testSecret)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -37,8 +38,28 @@ func TestGenerateAndValidate_RefreshToken(t *testing.T) {
 	assert.Equal(t, "refresh", claims.TokenType)
 }
 
+func TestGenerateAccessToken_WithBranchIDs(t *testing.T) {
+	ids := []int64{1, 3, 7}
+	token, err := GenerateAccessToken(10, model.RoleAdmin, ids, testSecret)
+	require.NoError(t, err)
+
+	claims, err := ValidateToken(token, testSecret)
+	require.NoError(t, err)
+	assert.Equal(t, ids, claims.BranchIDs)
+}
+
+func TestGenerateRefreshToken_WithBranchIDs(t *testing.T) {
+	ids := []int64{2}
+	token, err := GenerateRefreshToken(11, model.RoleDoctor, ids, testSecret)
+	require.NoError(t, err)
+
+	claims, err := ValidateToken(token, testSecret)
+	require.NoError(t, err)
+	assert.Equal(t, ids, claims.BranchIDs)
+}
+
 func TestValidateToken_WrongSecret(t *testing.T) {
-	token, err := GenerateAccessToken(1, model.RoleAdmin, testSecret)
+	token, err := GenerateAccessToken(1, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	_, err = ValidateToken(token, "wrong-secret")
@@ -62,7 +83,7 @@ func TestValidateToken_Expired(t *testing.T) {
 }
 
 func TestValidateToken_Tampered(t *testing.T) {
-	token, err := GenerateAccessToken(1, model.RoleAdmin, testSecret)
+	token, err := GenerateAccessToken(1, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	// Flip one character in the signature (last segment)
@@ -77,9 +98,9 @@ func TestValidateToken_Tampered(t *testing.T) {
 }
 
 func TestTokenTypes_Distinct(t *testing.T) {
-	access, err := GenerateAccessToken(1, model.RoleAdmin, testSecret)
+	access, err := GenerateAccessToken(1, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
-	refresh, err := GenerateRefreshToken(1, model.RoleAdmin, testSecret)
+	refresh, err := GenerateRefreshToken(1, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 
 	accessClaims, err := ValidateToken(access, testSecret)
@@ -93,12 +114,12 @@ func TestTokenTypes_Distinct(t *testing.T) {
 }
 
 func TestGenerateAccessToken_EmptySecret(t *testing.T) {
-	_, err := GenerateAccessToken(1, model.RoleAdmin, "")
+	_, err := GenerateAccessToken(1, model.RoleAdmin, nil, "")
 	assert.ErrorIs(t, err, ErrEmptySecret)
 }
 
 func TestGenerateRefreshToken_EmptySecret(t *testing.T) {
-	_, err := GenerateRefreshToken(1, model.RoleDoctor, "")
+	_, err := GenerateRefreshToken(1, model.RoleDoctor, nil, "")
 	assert.ErrorIs(t, err, ErrEmptySecret)
 }
 

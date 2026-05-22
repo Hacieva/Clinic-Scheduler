@@ -96,7 +96,7 @@ func TestLogin_EmptyJWTSecret(t *testing.T) {
 func TestRefresh_Success(t *testing.T) {
 	svc := NewAuthService(&mockUserRepo{user: validUser(true)}, testJWTSecret)
 
-	token, err := auth.GenerateRefreshToken(1, model.RoleDoctor, testJWTSecret)
+	token, err := auth.GenerateRefreshToken(1, model.RoleDoctor, nil, testJWTSecret)
 	require.NoError(t, err)
 
 	result, err := svc.Refresh(context.Background(), token)
@@ -123,7 +123,7 @@ func TestRefresh_InvalidToken(t *testing.T) {
 func TestRefresh_AccessTokenRejected(t *testing.T) {
 	svc := NewAuthService(&mockUserRepo{user: validUser(true)}, testJWTSecret)
 
-	accessToken, err := auth.GenerateAccessToken(1, model.RoleDoctor, testJWTSecret)
+	accessToken, err := auth.GenerateAccessToken(1, model.RoleDoctor, nil, testJWTSecret)
 	require.NoError(t, err)
 
 	_, err = svc.Refresh(context.Background(), accessToken)
@@ -133,7 +133,7 @@ func TestRefresh_AccessTokenRejected(t *testing.T) {
 func TestRefresh_InactiveUser(t *testing.T) {
 	svc := NewAuthService(&mockUserRepo{user: validUser(false)}, testJWTSecret)
 
-	token, err := auth.GenerateRefreshToken(1, model.RoleDoctor, testJWTSecret)
+	token, err := auth.GenerateRefreshToken(1, model.RoleDoctor, nil, testJWTSecret)
 	require.NoError(t, err)
 
 	_, err = svc.Refresh(context.Background(), token)
@@ -143,7 +143,7 @@ func TestRefresh_InactiveUser(t *testing.T) {
 func TestRefresh_UserNotFound(t *testing.T) {
 	svc := NewAuthService(&mockUserRepo{err: apperrors.ErrNotFound}, testJWTSecret)
 
-	token, err := auth.GenerateRefreshToken(1, model.RoleDoctor, testJWTSecret)
+	token, err := auth.GenerateRefreshToken(1, model.RoleDoctor, nil, testJWTSecret)
 	require.NoError(t, err)
 
 	_, err = svc.Refresh(context.Background(), token)
@@ -198,4 +198,85 @@ func TestChangePassword_UserNotFound(t *testing.T) {
 
 	err := svc.ChangePassword(context.Background(), 999, "ValidPass1!", "NewSecure99!")
 	assert.ErrorIs(t, err, apperrors.ErrNotFound)
+}
+
+// — BranchIDs in tokens (WithUserBranchService) —
+
+func validAdminUser() *model.User {
+	hash, _ := auth.HashPassword("ValidPass1!")
+	return &model.User{
+		ID:           20,
+		Email:        "admin@clinic.local",
+		PasswordHash: hash,
+		Role:         model.RoleAdmin,
+		IsActive:     true,
+	}
+}
+
+func TestLogin_AdminTokenContainsBranchIDs(t *testing.T) {
+	ubSvc := NewUserBranchService(
+		&mockUserBranchRepo{ids: []int64{2, 5}},
+		&mockBranchRepo{},
+	)
+	svc := NewAuthService(&mockUserRepo{user: validAdminUser()}, testJWTSecret).
+		WithUserBranchService(ubSvc)
+
+	result, err := svc.Login(context.Background(), "admin@clinic.local", "ValidPass1!")
+	require.NoError(t, err)
+
+	claims, err := auth.ValidateToken(result.AccessToken, testJWTSecret)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{2, 5}, claims.BranchIDs)
+}
+
+func TestLogin_OwnerTokenHasNilBranchIDs(t *testing.T) {
+	ownerUser := &model.User{ID: 1, Email: "owner@clinic.local", Role: model.RoleOwner, IsActive: true}
+	hash, _ := auth.HashPassword("ValidPass1!")
+	ownerUser.PasswordHash = hash
+
+	ubSvc := NewUserBranchService(
+		&mockUserBranchRepo{},
+		&mockBranchRepo{branches: []model.Branch{activeBranch(1, "Main"), activeBranch(2, "Branch 2")}},
+	)
+	svc := NewAuthService(&mockUserRepo{user: ownerUser}, testJWTSecret).
+		WithUserBranchService(ubSvc)
+
+	result, err := svc.Login(context.Background(), "owner@clinic.local", "ValidPass1!")
+	require.NoError(t, err)
+
+	claims, err := auth.ValidateToken(result.AccessToken, testJWTSecret)
+	require.NoError(t, err)
+	// owner gets all active branch IDs (not nil when userBranchSvc is set)
+	assert.Equal(t, []int64{1, 2}, claims.BranchIDs)
+}
+
+func TestLogin_NoBranchServiceTokenHasNilBranchIDs(t *testing.T) {
+	svc := NewAuthService(&mockUserRepo{user: validAdminUser()}, testJWTSecret)
+	// no WithUserBranchService
+
+	result, err := svc.Login(context.Background(), "admin@clinic.local", "ValidPass1!")
+	require.NoError(t, err)
+
+	claims, err := auth.ValidateToken(result.AccessToken, testJWTSecret)
+	require.NoError(t, err)
+	assert.Nil(t, claims.BranchIDs)
+}
+
+func TestRefresh_TokenContainsBranchIDs(t *testing.T) {
+	ubSvc := NewUserBranchService(
+		&mockUserBranchRepo{ids: []int64{3}},
+		&mockBranchRepo{},
+	)
+	svc := NewAuthService(&mockUserRepo{user: validAdminUser()}, testJWTSecret).
+		WithUserBranchService(ubSvc)
+
+	oldRefresh, err := auth.GenerateRefreshToken(20, model.RoleAdmin, nil, testJWTSecret)
+	require.NoError(t, err)
+
+	result, err := svc.Refresh(context.Background(), oldRefresh)
+	require.NoError(t, err)
+
+	claims, err := auth.ValidateToken(result.AccessToken, testJWTSecret)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{3}, claims.BranchIDs)
 }

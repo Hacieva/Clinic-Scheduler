@@ -86,14 +86,14 @@ func sampleDir() model.Direction {
 
 func adminToken(t *testing.T) string {
 	t.Helper()
-	tok, err := auth.GenerateAccessToken(42, model.RoleAdmin, testSecret)
+	tok, err := auth.GenerateAccessToken(42, model.RoleAdmin, nil, testSecret)
 	require.NoError(t, err)
 	return tok
 }
 
 func doctorToken(t *testing.T) string {
 	t.Helper()
-	tok, err := auth.GenerateAccessToken(43, model.RoleDoctor, testSecret)
+	tok, err := auth.GenerateAccessToken(43, model.RoleDoctor, nil, testSecret)
 	require.NoError(t, err)
 	return tok
 }

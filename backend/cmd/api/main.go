@@ -79,6 +79,10 @@ func main() {
 	branchSvc := service.NewBranchService(branchRepo)
 	branchHandler := handler.NewBranchHandler(branchSvc)
 
+	patientRepo := repository.NewPatientRepo(pool)
+	patientSvc := service.NewPatientService(patientRepo)
+	patientHandler := handler.NewPatientHandler(patientSvc)
+
 	apptRepo := repository.NewAppointmentRepo(pool)
 	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo)
 	apptHandler := handler.NewAppointmentHandler(apptSvc)
@@ -134,6 +138,15 @@ func main() {
 				r.Post("/branches", branchHandler.Create)
 				r.Patch("/branches/{id}", branchHandler.Update)
 				r.Delete("/branches/{id}", branchHandler.Delete)
+			})
+
+			// Patient endpoints — owner + admin
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole("owner", "admin"))
+				r.Get("/patients", patientHandler.List)
+				r.Get("/patients/{id}", patientHandler.GetByID)
+				r.Post("/patients", patientHandler.Create)
+				r.Patch("/patients/{id}", patientHandler.Update)
 			})
 
 			// Doctor-only appointment routes (privacy trimmed, doctor_id from JWT)

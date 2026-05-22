@@ -22,22 +22,25 @@ var (
 type Claims struct {
 	UserID    int64          `json:"user_id"`
 	Role      model.UserRole `json:"role"`
+	// BranchIDs lists accessible branches for admin/doctor.
+	// Nil means unrestricted access (owner role) or legacy token without branch info.
+	BranchIDs []int64        `json:"branch_ids,omitempty"`
 	TokenType string         `json:"token_type"` // "access" | "refresh"
 	jwt.RegisteredClaims
 }
 
-func GenerateAccessToken(userID int64, role model.UserRole, secret string) (string, error) {
+func GenerateAccessToken(userID int64, role model.UserRole, branchIDs []int64, secret string) (string, error) {
 	if secret == "" {
 		return "", ErrEmptySecret
 	}
-	return generate(userID, role, secret, accessTokenTTL, "access")
+	return generate(userID, role, branchIDs, secret, accessTokenTTL, "access")
 }
 
-func GenerateRefreshToken(userID int64, role model.UserRole, secret string) (string, error) {
+func GenerateRefreshToken(userID int64, role model.UserRole, branchIDs []int64, secret string) (string, error) {
 	if secret == "" {
 		return "", ErrEmptySecret
 	}
-	return generate(userID, role, secret, refreshTokenTTL, "refresh")
+	return generate(userID, role, branchIDs, secret, refreshTokenTTL, "refresh")
 }
 
 func ValidateToken(tokenStr, secret string) (*Claims, error) {
@@ -63,10 +66,11 @@ func ValidateToken(tokenStr, secret string) (*Claims, error) {
 	return claims, nil
 }
 
-func generate(userID int64, role model.UserRole, secret string, ttl time.Duration, tokenType string) (string, error) {
+func generate(userID int64, role model.UserRole, branchIDs []int64, secret string, ttl time.Duration, tokenType string) (string, error) {
 	claims := &Claims{
 		UserID:    userID,
 		Role:      role,
+		BranchIDs: branchIDs,
 		TokenType: tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),

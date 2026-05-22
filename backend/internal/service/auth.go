@@ -17,12 +17,18 @@ type LoginResult struct {
 }
 
 type AuthService struct {
-	users     repository.UserRepository
-	jwtSecret string
+	users          repository.UserRepository
+	jwtSecret      string
+	userBranchSvc  *UserBranchService
 }
 
 func NewAuthService(users repository.UserRepository, jwtSecret string) *AuthService {
 	return &AuthService{users: users, jwtSecret: jwtSecret}
+}
+
+func (s *AuthService) WithUserBranchService(svc *UserBranchService) *AuthService {
+	s.userBranchSvc = svc
+	return s
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
@@ -42,12 +48,20 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 		return nil, apperrors.ErrUnauthorized
 	}
 
-	accessToken, err := auth.GenerateAccessToken(user.ID, user.Role, s.jwtSecret)
+	var branchIDs []int64
+	if s.userBranchSvc != nil {
+		branchIDs, err = s.userBranchSvc.GetBranchIDs(ctx, user.ID, user.Role)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	accessToken, err := auth.GenerateAccessToken(user.ID, user.Role, branchIDs, s.jwtSecret)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := auth.GenerateRefreshToken(user.ID, user.Role, s.jwtSecret)
+	refreshToken, err := auth.GenerateRefreshToken(user.ID, user.Role, branchIDs, s.jwtSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -79,11 +93,19 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*LoginR
 		return nil, apperrors.ErrInactiveUser
 	}
 
-	newAccess, err := auth.GenerateAccessToken(user.ID, user.Role, s.jwtSecret)
+	var branchIDs []int64
+	if s.userBranchSvc != nil {
+		branchIDs, err = s.userBranchSvc.GetBranchIDs(ctx, user.ID, user.Role)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	newAccess, err := auth.GenerateAccessToken(user.ID, user.Role, branchIDs, s.jwtSecret)
 	if err != nil {
 		return nil, err
 	}
-	newRefresh, err := auth.GenerateRefreshToken(user.ID, user.Role, s.jwtSecret)
+	newRefresh, err := auth.GenerateRefreshToken(user.ID, user.Role, branchIDs, s.jwtSecret)
 	if err != nil {
 		return nil, err
 	}
