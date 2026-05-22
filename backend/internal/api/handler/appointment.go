@@ -333,6 +333,15 @@ func parseAppointmentFilter(w http.ResponseWriter, r *http.Request) (repository.
 		filter.DoctorID = &id
 	}
 
+	if v := q.Get("branch_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid branch_id"})
+			return filter, false
+		}
+		filter.BranchID = &id
+	}
+
 	if v := q.Get("status"); v != "" {
 		s := model.AppointmentStatus(v)
 		filter.Status = &s

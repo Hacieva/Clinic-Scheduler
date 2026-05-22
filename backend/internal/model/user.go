@@ -11,6 +11,7 @@ type UserRole string
 const (
 	RoleAdmin  UserRole = "admin"
 	RoleDoctor UserRole = "doctor"
+	RoleOwner  UserRole = "owner"
 )
 
 // User mirrors the users table.

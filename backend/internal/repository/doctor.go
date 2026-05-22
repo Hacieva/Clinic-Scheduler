@@ -14,7 +14,7 @@ import (
 )
 
 type DoctorRepository interface {
-	List(ctx context.Context, directionID *int64) ([]model.DoctorWithDirections, error)
+	List(ctx context.Context, filter DoctorFilter) ([]model.DoctorWithDirections, error)
 	GetByID(ctx context.Context, id int64) (*model.DoctorWithDirections, error)
 	GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error)
 	Create(ctx context.Context, input CreateDoctorInput) (*model.Doctor, error)
@@ -36,6 +36,12 @@ type CreateDoctorInput struct {
 
 type UpdateDoctorInput = CreateDoctorInput
 
+// DoctorFilter holds optional predicates for the List query.
+type DoctorFilter struct {
+	DirectionID *int64
+	BranchID    *int64
+}
+
 type DoctorRepo struct {
 	db *pgxpool.Pool
 }
@@ -44,9 +50,9 @@ func NewDoctorRepo(db *pgxpool.Pool) *DoctorRepo {
 	return &DoctorRepo{db: db}
 }
 
-// List returns all doctors, optionally filtered by direction.
-// When directionID is nil the full list is returned (existing behaviour preserved).
-func (r *DoctorRepo) List(ctx context.Context, directionID *int64) ([]model.DoctorWithDirections, error) {
+// List returns all doctors, optionally filtered by direction and/or branch.
+// Nil fields are ignored — existing behaviour is preserved when filter is zero-value.
+func (r *DoctorRepo) List(ctx context.Context, filter DoctorFilter) ([]model.DoctorWithDirections, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.user_id, d.first_name, d.last_name, d.middle_name,
 		       d.cabinet, d.branch_address, d.description, d.photo_url,
@@ -59,7 +65,8 @@ func (r *DoctorRepo) List(ctx context.Context, directionID *int64) ([]model.Doct
 		           SELECT 1 FROM doctor_directions
 		           WHERE  doctor_id = d.id AND direction_id = $1
 		       ))
-		ORDER  BY d.id, dir.id`, directionID)
+		  AND  ($2::bigint IS NULL OR d.branch_id = $2)
+		ORDER  BY d.id, dir.id`, filter.DirectionID, filter.BranchID)
 	if err != nil {
 		return nil, err
 	}

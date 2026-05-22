@@ -54,6 +54,7 @@ type AppointmentDetail struct {
 // Limit is clamped to [1, 100]; default 50.
 type AppointmentFilter struct {
 	DoctorID *int64
+	BranchID *int64
 	Status   *model.AppointmentStatus
 	DateFrom *time.Time
 	DateTo   *time.Time
@@ -221,6 +222,11 @@ func (r *AppointmentRepo) List(ctx context.Context, filter AppointmentFilter) ([
 	if filter.DoctorID != nil {
 		query += fmt.Sprintf(` AND a.doctor_id = $%d`, n)
 		args = append(args, *filter.DoctorID)
+		n++
+	}
+	if filter.BranchID != nil {
+		query += fmt.Sprintf(` AND a.branch_id = $%d`, n)
+		args = append(args, *filter.BranchID)
 		n++
 	}
 	if filter.Status != nil {

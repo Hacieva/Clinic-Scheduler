@@ -8,6 +8,7 @@ import (
 
 	apperrors "github.com/Hacieva/clinic-scheduler/backend/internal/errors"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/auth"
+	"github.com/Hacieva/clinic-scheduler/backend/internal/repository"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/service"
 )
 
@@ -39,16 +40,27 @@ type setDirectionsRequest struct {
 }
 
 func (h *DoctorHandler) List(w http.ResponseWriter, r *http.Request) {
-	var directionID *int64
+	filter := repository.DoctorFilter{}
+
 	if v := r.URL.Query().Get("direction_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || id <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid direction_id"})
 			return
 		}
-		directionID = &id
+		filter.DirectionID = &id
 	}
-	docs, err := h.svc.List(r.Context(), directionID)
+
+	if v := r.URL.Query().Get("branch_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid branch_id"})
+			return
+		}
+		filter.BranchID = &id
+	}
+
+	docs, err := h.svc.List(r.Context(), filter)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return

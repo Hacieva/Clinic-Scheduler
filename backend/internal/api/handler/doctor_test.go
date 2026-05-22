@@ -26,7 +26,7 @@ type mockDoctorRepo struct {
 	err        error
 }
 
-func (m *mockDoctorRepo) List(_ context.Context, _ *int64) ([]model.DoctorWithDirections, error) {
+func (m *mockDoctorRepo) List(_ context.Context, _ repository.DoctorFilter) ([]model.DoctorWithDirections, error) {
 	return m.doctors, m.err
 }
 
@@ -398,4 +398,25 @@ func TestDoctorSetDirections_DoctorForbidden(t *testing.T) {
 		`{"direction_ids":[]}`, doctorToken(t))
 
 	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+// — branch_id filter —
+
+func TestDoctorList_BranchIDFilter_OK(t *testing.T) {
+	router := newDoctorRouter(
+		&mockDoctorRepo{doctors: []model.DoctorWithDirections{sampleDW()}},
+		&mockDirectionRepo{},
+	)
+
+	rr := bearerReq(router, http.MethodGet, "/api/v1/doctors?branch_id=1", "", adminToken(t))
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestDoctorList_BranchIDFilter_Invalid(t *testing.T) {
+	router := newDoctorRouter(&mockDoctorRepo{}, &mockDirectionRepo{})
+
+	rr := bearerReq(router, http.MethodGet, "/api/v1/doctors?branch_id=abc", "", adminToken(t))
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }

@@ -613,3 +613,18 @@ func TestAdminList_InvalidOffset(t *testing.T) {
 	rr := bearerReq(router, http.MethodGet, "/api/v1/appointments?offset=-1", "", adminToken(t))
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
+
+func TestAdminList_BranchIDFilter_OK(t *testing.T) {
+	router := newAppointmentRouter(
+		&mockApptRepo{list: []repository.AppointmentDetail{}},
+		&mockDoctorRepo{}, &mockServiceRepo{}, testBotSecret,
+	)
+	rr := bearerReq(router, http.MethodGet, "/api/v1/appointments?branch_id=1", "", adminToken(t))
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestAdminList_BranchIDFilter_Invalid(t *testing.T) {
+	router := newAppointmentRouter(&mockApptRepo{}, &mockDoctorRepo{}, &mockServiceRepo{}, testBotSecret)
+	rr := bearerReq(router, http.MethodGet, "/api/v1/appointments?branch_id=abc", "", adminToken(t))
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}

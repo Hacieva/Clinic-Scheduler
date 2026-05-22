@@ -75,6 +75,10 @@ func main() {
 	availSvc := availability.NewService(scheduleRepo, apptSlotRepo, serviceRepo)
 	availHandler := handler.NewAvailabilityHandler(availSvc)
 
+	branchRepo := repository.NewBranchRepo(pool)
+	branchSvc := service.NewBranchService(branchRepo)
+	branchHandler := handler.NewBranchHandler(branchSvc)
+
 	apptRepo := repository.NewAppointmentRepo(pool)
 	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo)
 	apptHandler := handler.NewAppointmentHandler(apptSvc)
@@ -118,6 +122,19 @@ func main() {
 			r.Get("/doctors/{id}/working-hours", scheduleHandler.ListWorkingHours)
 			r.Get("/doctors/{id}/exceptions", scheduleHandler.ListExceptions)
 			r.Get("/availability", availHandler.GetAvailability)
+
+			// Branch endpoints — read: owner+admin, write: owner only
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole("owner", "admin"))
+				r.Get("/branches", branchHandler.List)
+				r.Get("/branches/{id}", branchHandler.GetByID)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireRole("owner"))
+				r.Post("/branches", branchHandler.Create)
+				r.Patch("/branches/{id}", branchHandler.Update)
+				r.Delete("/branches/{id}", branchHandler.Delete)
+			})
 
 			// Doctor-only appointment routes (privacy trimmed, doctor_id from JWT)
 			r.Group(func(r chi.Router) {

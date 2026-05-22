@@ -27,4 +27,10 @@ var (
 
 	// Appointment status machine
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+
+	// Input validation
+	ErrInvalidInput = errors.New("invalid input")
+
+	// Branch
+	ErrBranchHasActiveDoctors = errors.New("branch has active doctors")
 )
