@@ -6,6 +6,8 @@ import DirectionsPage from './pages/admin/DirectionsPage'
 import DoctorsPage from './pages/admin/DoctorsPage'
 import DoctorDetailPage from './pages/admin/DoctorDetailPage'
 import AppointmentsPage from './pages/admin/AppointmentsPage'
+import PatientsPage from './pages/admin/PatientsPage'
+import PatientDetailPage from './pages/admin/PatientDetailPage'
 import SchedulePage from './pages/doctor/SchedulePage'
 
 export default function App() {
@@ -14,7 +16,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
-        {/* Admin routes */}
+        {/* Admin-only routes */}
         <Route element={<RequireAuth allowedRoles={['admin']} />}>
           <Route element={<Layout />}>
             <Route path="/admin/directions" element={<DirectionsPage />} />
@@ -22,6 +24,14 @@ export default function App() {
             <Route path="/admin/doctors/:id" element={<DoctorDetailPage />} />
             <Route path="/admin/appointments" element={<AppointmentsPage />} />
             <Route path="/admin" element={<Navigate to="/admin/directions" replace />} />
+          </Route>
+        </Route>
+
+        {/* Admin + Owner routes */}
+        <Route element={<RequireAuth allowedRoles={['admin', 'owner']} />}>
+          <Route element={<Layout />}>
+            <Route path="/admin/patients" element={<PatientsPage />} />
+            <Route path="/admin/patients/:id" element={<PatientDetailPage />} />
           </Route>
         </Route>
 
