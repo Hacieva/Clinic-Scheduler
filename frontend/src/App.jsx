@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
+import ScheduleGridPage from './pages/admin/ScheduleGridPage'
 import DirectionsPage from './pages/admin/DirectionsPage'
 import DoctorsPage from './pages/admin/DoctorsPage'
 import DoctorDetailPage from './pages/admin/DoctorDetailPage'
@@ -30,6 +31,7 @@ export default function App() {
         {/* Admin + Owner routes */}
         <Route element={<RequireAuth allowedRoles={['admin', 'owner']} />}>
           <Route element={<Layout />}>
+            <Route path="/admin/schedule-grid" element={<ScheduleGridPage />} />
             <Route path="/admin/patients" element={<PatientsPage />} />
             <Route path="/admin/patients/:id" element={<PatientDetailPage />} />
           </Route>

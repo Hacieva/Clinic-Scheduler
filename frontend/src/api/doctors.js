@@ -1,7 +1,7 @@
 import client from './client'
 
-export const getDoctors = () =>
-  client.get('/doctors').then((r) => r.data)
+export const getDoctors = (params) =>
+  client.get('/doctors', { params }).then((r) => r.data)
 
 export const getDoctorById = (id) =>
   client.get(`/doctors/${id}`).then((r) => r.data)

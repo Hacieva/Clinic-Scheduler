@@ -1,14 +1,15 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays, UserRound } from 'lucide-react'
+import { BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays, UserRound, LayoutGrid } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useAuthStore from '../stores/auth'
 import { logout } from '../api/auth'
 
 const adminNav = [
-  { to: '/admin/directions', label: 'Направления', icon: BookOpen },
-  { to: '/admin/doctors', label: 'Врачи', icon: Users },
+  { to: '/admin/schedule-grid', label: 'Журнал записи', icon: LayoutGrid },
   { to: '/admin/appointments', label: 'Записи', icon: ClipboardList },
   { to: '/admin/patients', label: 'Пациенты', icon: UserRound },
+  { to: '/admin/doctors', label: 'Врачи', icon: Users },
+  { to: '/admin/directions', label: 'Направления', icon: BookOpen },
 ]
 
 const doctorNav = [
