@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, isToday } from 'date-fns'
 import { getAppointments } from '../api/appointments'
 import { getDoctors } from '../api/doctors'
 
@@ -64,22 +65,51 @@ function minToTime(absMin) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+function getNowTop() {
+  const n = new Date()
+  const mins = n.getHours() * 60 + n.getMinutes()
+  if (mins < DAY_START || mins > DAY_END) return null
+  return mins - DAY_START
+}
+
+function loadColor(pct) {
+  if (pct >= 0.75) return 'bg-rose-400'
+  if (pct >= 0.5) return 'bg-amber-400'
+  return 'bg-emerald-400'
+}
+
+function doctorStats(appointments, doctorId) {
+  const active = appointments.filter(
+    (a) =>
+      a.doctor_id === doctorId &&
+      a.status !== 'cancelled_by_admin' &&
+      a.status !== 'cancelled_by_patient',
+  )
+  const mins = active.reduce(
+    (s, a) => s + (new Date(a.end_at) - new Date(a.start_at)) / 60000,
+    0,
+  )
+  return { count: active.length, loadPct: Math.min(mins / GRID_H, 1) }
+}
+
 // ─── DoctorCol ────────────────────────────────────────────────────────────────
 
-function DoctorCol({ doctor, appointments, onEventClick, onSlotClick }) {
+function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) {
   const appts = appointments.filter((a) => a.doctor_id === doctor.id)
+  const [hoverSnap, setHoverSnap] = useState(null)
 
-  const handleClick = (e) => {
+  const getSnap = (e) => {
     const y = e.clientY - e.currentTarget.getBoundingClientRect().top
-    const snapped = Math.min(Math.floor(y / 30) * 30, GRID_H - 30)
-    onSlotClick(doctor.id, minToTime(DAY_START + snapped))
+    return Math.min(Math.floor(y / 30) * 30, GRID_H - 30)
   }
 
   return (
     <div
-      className="relative border-r border-gray-100 last:border-r-0 cursor-cell group"
+      className="relative border-r border-gray-100 last:border-r-0 cursor-cell"
       style={{ height: `${GRID_H}px`, minWidth: `${MIN_COL_W}px` }}
-      onClick={handleClick}
+      onClick={(e) => onSlotClick(doctor.id, minToTime(DAY_START + getSnap(e)))}
+      onMouseMove={(e) => setHoverSnap(getSnap(e))}
+      onMouseLeave={() => setHoverSnap(null)}
     >
       {/* Hour / half-hour guide lines */}
       {GRID_LINES.map(({ top, major }) => (
@@ -94,8 +124,25 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick }) {
         />
       ))}
 
-      {/* Subtle hover tint on empty space */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-blue-50/20 pointer-events-none transition-opacity" />
+      {/* Current time line — spans each column for correct sticky behaviour */}
+      {nowTop !== null && (
+        <div
+          className="absolute inset-x-0 h-px bg-red-400 pointer-events-none"
+          style={{ top: `${nowTop}px`, zIndex: 11 }}
+        />
+      )}
+
+      {/* Slot hover highlight + time label */}
+      {hoverSnap !== null && (
+        <div
+          className="absolute inset-x-0 pointer-events-none bg-blue-50/70 border border-dashed border-blue-300 rounded-sm"
+          style={{ top: `${hoverSnap}px`, height: '30px', zIndex: 12 }}
+        >
+          <span className="absolute right-1 top-0.5 text-[10px] text-blue-600 font-medium leading-none bg-white/80 px-1 rounded">
+            {minToTime(DAY_START + hoverSnap)}
+          </span>
+        </div>
+      )}
 
       {/* Appointment events */}
       {appts.map((appt) => {
@@ -125,6 +172,11 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick }) {
                 {appt.service_name}
               </div>
             )}
+            {height >= 72 && appt.patient_phone && (
+              <div className="text-[10px] opacity-60 leading-tight truncate">
+                {appt.patient_phone}
+              </div>
+            )}
           </button>
         )
       })}
@@ -136,6 +188,16 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick }) {
 
 export default function AppointmentGrid({ date, branchId, onEventClick, onSlotClick }) {
   const dateStr = format(date, 'yyyy-MM-dd')
+  const viewingToday = isToday(date)
+
+  const [nowTop, setNowTop] = useState(() => (viewingToday ? getNowTop() : null))
+
+  useEffect(() => {
+    if (!viewingToday) { setNowTop(null); return }
+    setNowTop(getNowTop())
+    const id = setInterval(() => setNowTop(getNowTop()), 60_000)
+    return () => clearInterval(id)
+  }, [viewingToday])
 
   const { data: allDoctors = [], isLoading: loadingDr } = useQuery({
     queryKey: ['grid-doctors', branchId ?? null],
@@ -194,19 +256,40 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
             className="sticky left-0 z-30 shrink-0 bg-white border-r border-gray-200"
             style={{ width: `${TIME_W}px` }}
           />
-          {/* Doctor name cells */}
-          {doctors.map((d) => (
-            <div
-              key={d.id}
-              className="px-3 py-2.5 border-r border-gray-100 last:border-r-0"
-              style={{ minWidth: `${MIN_COL_W}px`, flex: '1 0 0' }}
-            >
-              <p className="text-sm font-semibold text-gray-800 truncate">{fullName(d)}</p>
-              {d.cabinet && (
-                <p className="text-xs text-gray-400 truncate mt-0.5">Кабинет {d.cabinet}</p>
-              )}
-            </div>
-          ))}
+          {/* Doctor header cells */}
+          {doctors.map((d) => {
+            const { count, loadPct } = doctorStats(appointments, d.id)
+            return (
+              <div
+                key={d.id}
+                className="relative border-r border-gray-100 last:border-r-0 overflow-hidden"
+                style={{ minWidth: `${MIN_COL_W}px`, flex: '1 0 0' }}
+              >
+                <div className="px-3 py-2.5">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{fullName(d)}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {d.cabinet && (
+                      <p className="text-xs text-gray-400 truncate">Каб. {d.cabinet}</p>
+                    )}
+                    {count > 0 && (
+                      <span className="text-[10px] text-gray-400 font-medium shrink-0">
+                        {count} зап.
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* Doctor load bar */}
+                {loadPct > 0 && (
+                  <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gray-100">
+                    <div
+                      className={`h-full ${loadColor(loadPct)} transition-all duration-300`}
+                      style={{ width: `${loadPct * 100}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {/* ── Body: time axis + doctor columns ── */}
@@ -226,6 +309,15 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
                 {label}
               </span>
             ))}
+            {/* Current time dot anchored to time axis right edge */}
+            {nowTop !== null && (
+              <div
+                className="absolute z-20 -translate-y-1/2 pointer-events-none"
+                style={{ top: `${nowTop}px`, right: '-5px' }}
+              >
+                <div className="w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-red-200" />
+              </div>
+            )}
           </div>
 
           {/* Doctor columns */}
@@ -236,6 +328,7 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
               appointments={appointments}
               onEventClick={onEventClick}
               onSlotClick={onSlotClick}
+              nowTop={nowTop}
             />
           ))}
 

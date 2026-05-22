@@ -14,6 +14,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import useBranchStore from '../../stores/branch'
 import { getDoctors } from '../../api/doctors'
 import { getDoctorServices } from '../../api/services'
+import { getPatients } from '../../api/patients'
 import {
   createAppointment,
   confirmAppointment,
@@ -75,6 +76,29 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
 
   const { onChange: rhfDoctorChange, ...restDoctor } = register('doctor_id')
 
+  // Patient quick-search
+  const [patientSearch, setPatientSearch] = useState('')
+  const [patientQuery, setPatientQuery] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setPatientQuery(patientSearch), 300)
+    return () => clearTimeout(t)
+  }, [patientSearch])
+
+  const { data: patientResults = [] } = useQuery({
+    queryKey: ['patient-search', patientQuery],
+    queryFn: () => getPatients({ search: patientQuery, limit: 5 }),
+    enabled: patientQuery.trim().length >= 2,
+  })
+
+  const selectPatient = (p) => {
+    setValue('patient_name', p.full_name ?? '')
+    setValue('patient_phone', p.phone ?? '')
+    setPatientSearch(p.full_name ?? '')
+    setShowDropdown(false)
+  }
+
   // Notify parent about pre-filled doctor so services load
   useEffect(() => {
     if (initialDoctorId) onDoctorChange(String(initialDoctorId))
@@ -82,6 +106,39 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
+      {/* Patient quick-search */}
+      <div className="relative">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Поиск пациента</label>
+        <input
+          type="text"
+          value={patientSearch}
+          onChange={(e) => { setPatientSearch(e.target.value); setShowDropdown(true) }}
+          onFocus={() => patientQuery.trim().length >= 2 && setShowDropdown(true)}
+          onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+          placeholder="Начните вводить ФИО или телефон…"
+          autoComplete="off"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        {showDropdown && patientResults.length > 0 && (
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">
+            {patientResults.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selectPatient(p)}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+              >
+                <span className="font-medium text-gray-900">{p.full_name}</span>
+                {p.phone && (
+                  <span className="text-gray-400 ml-2 text-xs">{p.phone}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
