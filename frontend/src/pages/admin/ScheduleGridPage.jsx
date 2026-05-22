@@ -5,13 +5,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { addDays, subDays, format, isToday } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Building2, Check, X, SquareCheck, UserX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AppointmentGrid from '../../components/AppointmentGrid'
 import Modal from '../../components/Modal'
 import Badge from '../../components/Badge'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { getBranches } from '../../api/branches'
+import useBranchStore from '../../stores/branch'
 import { getDoctors } from '../../api/doctors'
 import { getDoctorServices } from '../../api/services'
 import {
@@ -314,7 +314,7 @@ export default function ScheduleGridPage() {
   const qc = useQueryClient()
 
   const [date, setDate] = useState(new Date())
-  const [branchId, setBranchId] = useState('')
+  const activeBranchId = useBranchStore((s) => s.activeBranchId)
 
   // Modal state
   const [selectedAppt, setSelectedAppt] = useState(null)
@@ -324,11 +324,6 @@ export default function ScheduleGridPage() {
   const [createDoctorId, setCreateDoctorId] = useState('')
 
   // ── Data ──
-  const { data: branches = [] } = useQuery({
-    queryKey: ['branches'],
-    queryFn: getBranches,
-  })
-
   const { data: doctors = [] } = useQuery({
     queryKey: ['doctors'],
     queryFn: getDoctors,
@@ -466,25 +461,6 @@ export default function ScheduleGridPage() {
 
         <div className="flex-1" />
 
-        {/* Branch switcher (foundation) */}
-        {branches.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Building2 size={15} className="text-gray-400 shrink-0" />
-            <select
-              value={branchId}
-              onChange={(e) => setBranchId(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="">Все филиалы</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         {/* New appointment button */}
         <button
           onClick={() => setCreateModal({ doctorId: null, startAt: null })}
@@ -498,7 +474,7 @@ export default function ScheduleGridPage() {
       {/* ── Grid ── */}
       <AppointmentGrid
         date={date}
-        branchId={branchId ? Number(branchId) : undefined}
+        branchId={activeBranchId ?? undefined}
         onEventClick={handleEventClick}
         onSlotClick={handleSlotClick}
       />
