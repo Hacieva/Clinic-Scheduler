@@ -36,10 +36,10 @@ export default function LoginPage() {
       const data = await login(email, password)
       setTokens(data.access_token, data.refresh_token)
       setUser(data.user)
-      if (data.user.role === 'admin') {
-        navigate('/admin/directions', { replace: true })
-      } else {
+      if (data.user.role === 'doctor') {
         navigate('/doctor/schedule', { replace: true })
+      } else {
+        navigate('/admin/schedule-grid', { replace: true })
       }
     } catch (err) {
       toast.error(getErrorMessage(err))
