@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays, UserRound,
-  LayoutGrid, Settings, Building2, UserCog, Plug2, Tag, FlaskConical, ChevronDown, BarChart3,
+  LayoutGrid, Settings, Building2, UserCog, Plug2, Tag, FlaskConical, ChevronDown, BarChart3, CreditCard,
 } from 'lucide-react'
 import useAuthStore from '../stores/auth'
 import useBranchStore from '../stores/branch'
@@ -18,6 +18,7 @@ const MAIN_NAV = [
   { to: '/admin/appointments',  label: 'Записи',        icon: ClipboardList },
   { to: '/admin/patients',      label: 'Пациенты',      icon: UserRound },
   { to: '/admin/doctors',       label: 'Врачи',         icon: Users },
+  { to: '/admin/cashbox',       label: 'Касса',         icon: CreditCard },
   { to: '/admin/directions',    label: 'Направления',   icon: BookOpen },
 ]
 

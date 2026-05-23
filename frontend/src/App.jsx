@@ -16,6 +16,8 @@ import IntegrationsPage from './pages/admin/settings/IntegrationsPage'
 import PricesPage from './pages/admin/settings/PricesPage'
 import LabPage from './pages/admin/settings/LabPage'
 import DashboardPage from './pages/admin/DashboardPage'
+import CashboxPage from './pages/admin/cashbox/CashboxPage'
+import WalkInPage from './pages/admin/cashbox/WalkInPage'
 
 export default function App() {
   return (
@@ -35,6 +37,10 @@ export default function App() {
             <Route path="/admin/doctors" element={<DoctorsPage />} />
             <Route path="/admin/doctors/:id" element={<DoctorDetailPage />} />
             <Route path="/admin/directions" element={<DirectionsPage />} />
+
+            {/* Cashbox */}
+            <Route path="/admin/cashbox" element={<CashboxPage />} />
+            <Route path="/admin/cashbox/walk-in" element={<WalkInPage />} />
 
             {/* Settings */}
             <Route path="/admin/settings/branches" element={<BranchesPage />} />
