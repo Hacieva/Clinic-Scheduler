@@ -127,14 +127,11 @@ func main() {
 			r.Get("/doctors/{id}/exceptions", scheduleHandler.ListExceptions)
 			r.Get("/availability", availHandler.GetAvailability)
 
-			// Branch endpoints — read: owner+admin, write: owner only
+			// Branch endpoints — owner + admin for all operations
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole("owner", "admin"))
 				r.Get("/branches", branchHandler.List)
 				r.Get("/branches/{id}", branchHandler.GetByID)
-			})
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRole("owner"))
 				r.Post("/branches", branchHandler.Create)
 				r.Patch("/branches/{id}", branchHandler.Update)
 				r.Delete("/branches/{id}", branchHandler.Delete)
