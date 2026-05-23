@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -81,6 +81,8 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
   const [patientSearch, setPatientSearch] = useState('')
   const [patientQuery, setPatientQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const containerRef = useRef(null)
 
   useEffect(() => {
     const t = setTimeout(() => setPatientQuery(patientSearch), 300)
@@ -93,11 +95,58 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
     enabled: patientQuery.trim().length >= 2,
   })
 
+  useEffect(() => { setSelectedIndex(-1) }, [patientResults])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowDropdown(false)
+        setSelectedIndex(-1)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const capitalizeWords = (val) =>
+    val.replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
+
+  const highlight = (text, query) => {
+    if (!query || query.length < 2) return text
+    const idx = text.toLowerCase().indexOf(query.toLowerCase())
+    if (idx === -1) return text
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-yellow-100 text-yellow-900 not-italic font-semibold rounded-sm">{text.slice(idx, idx + query.length)}</mark>
+        {text.slice(idx + query.length)}
+      </>
+    )
+  }
+
+  const handleKeyDown = (e) => {
+    if (!showDropdown || patientResults.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex((i) => Math.min(i + 1, patientResults.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex((i) => Math.max(i - 1, -1))
+    } else if (e.key === 'Enter' && selectedIndex >= 0) {
+      e.preventDefault()
+      selectPatient(patientResults[selectedIndex])
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false)
+      setSelectedIndex(-1)
+    }
+  }
+
   const selectPatient = (p) => {
     setValue('patient_name', p.full_name ?? '')
     setValue('patient_phone', p.phone ?? '')
     setPatientSearch(p.full_name ?? '')
     setShowDropdown(false)
+    setSelectedIndex(-1)
   }
 
   // Notify parent about pre-filled doctor so services load
@@ -109,7 +158,7 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="relative">
+        <div className="relative" ref={containerRef}>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             ФИО пациента <span className="text-red-500">*</span>
           </label>
@@ -118,26 +167,29 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
             type="text"
             value={patientSearch}
             onChange={(e) => {
-              setPatientSearch(e.target.value)
-              setValue('patient_name', e.target.value)
+              const val = capitalizeWords(e.target.value)
+              setPatientSearch(val)
+              setValue('patient_name', val)
               setShowDropdown(true)
             }}
             onFocus={() => patientQuery.trim().length >= 2 && setShowDropdown(true)}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+            onKeyDown={handleKeyDown}
             placeholder="Введите ФИО или телефон…"
             autoComplete="off"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           {showDropdown && patientResults.length > 0 && (
-            <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-36 overflow-y-auto">
-              {patientResults.map((p) => (
+            <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+              {patientResults.map((p, idx) => (
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => selectPatient(p)}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                  onMouseDown={() => selectPatient(p)}
+                  className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-b-0 transition-colors ${
+                    idx === selectedIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
+                  }`}
                 >
-                  <span className="font-medium text-gray-900">{p.full_name}</span>
+                  <span className="font-medium text-gray-900">{highlight(p.full_name, patientQuery)}</span>
                   {p.phone && <span className="text-gray-400 ml-2 text-xs">{p.phone}</span>}
                 </button>
               ))}

@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import {
   ArrowLeft, Pencil, Phone, Mail, Calendar, MessageSquare,
   CalendarClock, Lock, BarChart2, FileText, MessagesSquare,
-  Check, X,
+  Check, X, UserRound,
 } from 'lucide-react'
 import { getPatient, updatePatient } from '../../api/patients'
 import Modal from '../../components/Modal'
@@ -329,15 +329,21 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
-              <span className="flex items-center gap-1.5 text-sm text-gray-600">
-                <Phone size={13} className="text-gray-400" />
+              <a
+                href={`tel:${patient.phone}`}
+                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <Phone size={13} className="text-blue-400" />
                 {patient.phone}
-              </span>
+              </a>
               {patient.email && (
-                <span className="flex items-center gap-1.5 text-sm text-gray-500">
-                  <Mail size={13} className="text-gray-400" />
+                <a
+                  href={`mailto:${patient.email}`}
+                  className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 transition-colors"
+                >
+                  <Mail size={13} className="text-blue-400" />
                   {patient.email}
-                </span>
+                </a>
               )}
               {label && (
                 <span className="text-sm text-gray-500 font-medium">{label}</span>
@@ -362,7 +368,7 @@ export default function PatientDetailPage() {
         )}
         <InfoRow icon={Mail} label="Email" value={patient.email} />
         <InfoRow
-          icon={Phone}
+          icon={UserRound}
           label="Источник"
           value={patient.source === 'telegram_bot' ? 'Telegram Bot' : 'Администратор'}
         />

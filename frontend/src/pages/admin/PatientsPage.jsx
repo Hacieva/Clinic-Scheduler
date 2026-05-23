@@ -93,10 +93,14 @@ function PatientRow({ patient, onClick }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-900 truncate">{patient.full_name}</p>
         <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-          <span className="flex items-center gap-1 text-xs text-gray-500">
+          <a
+            href={`tel:${patient.phone}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition-colors"
+          >
             <Phone size={11} />
             {patient.phone}
-          </span>
+          </a>
           {patient.email && (
             <span className="flex items-center gap-1 text-xs text-gray-400 truncate max-w-[160px]">
               <Mail size={11} />

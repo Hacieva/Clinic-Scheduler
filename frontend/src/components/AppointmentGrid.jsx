@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format, parseISO, isToday } from 'date-fns'
+import { Users } from 'lucide-react'
 import { getAppointments } from '../api/appointments'
 import { getDoctors } from '../api/doctors'
 
@@ -156,7 +157,7 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
               e.stopPropagation()
               onEventClick(appt)
             }}
-            className={`absolute left-1 right-1 ${bg} ${txt} rounded-sm overflow-hidden text-left px-2 py-0.5 hover:brightness-95 transition-all shadow-sm z-10`}
+            className={`absolute left-0.5 right-0.5 ${bg} ${txt} rounded overflow-hidden text-left px-2 py-1 hover:brightness-95 active:brightness-90 transition-all shadow-sm z-10 select-none`}
             style={{ top: `${top}px`, height: `${height}px` }}
           >
             <div className="font-semibold text-xs leading-tight truncate">
@@ -221,17 +222,29 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
 
   if (loading && doctors.length === 0) {
     return (
-      <div className="flex items-center justify-center flex-1 text-sm text-gray-400">
-        Загрузка...
+      <div className="flex flex-col items-center justify-center flex-1 gap-3">
+        <div className="flex gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="w-2 h-2 rounded-full bg-blue-300 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
+        <p className="text-xs text-gray-400">Загрузка расписания…</p>
       </div>
     )
   }
 
   if (!loading && doctors.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-2 text-gray-400">
-        <p className="text-sm font-medium text-gray-500">Нет активных врачей</p>
-        <p className="text-xs">Добавьте врачей в разделе «Врачи»</p>
+      <div className="flex flex-col items-center justify-center flex-1 gap-3 text-gray-400">
+        <Users size={36} strokeWidth={1.25} className="text-gray-300" />
+        <div className="text-center">
+          <p className="text-sm font-medium text-gray-500">Нет активных врачей</p>
+          <p className="text-xs mt-0.5">Добавьте врачей в разделе «Врачи»</p>
+        </div>
       </div>
     )
   }
