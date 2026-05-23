@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays, UserRound,
-  LayoutGrid, Settings, Building2, UserCog, Plug2, Tag, FlaskConical, ChevronDown,
+  LayoutGrid, Settings, Building2, UserCog, Plug2, Tag, FlaskConical, ChevronDown, BarChart3,
 } from 'lucide-react'
 import useAuthStore from '../stores/auth'
 import useBranchStore from '../stores/branch'
@@ -13,6 +13,7 @@ import { getBranches } from '../api/branches'
 // ─── Nav definitions ──────────────────────────────────────────────────────────
 
 const MAIN_NAV = [
+  { to: '/admin/dashboard',     label: 'Сводка',        icon: BarChart3 },
   { to: '/admin/schedule-grid', label: 'Журнал записи', icon: LayoutGrid },
   { to: '/admin/appointments',  label: 'Записи',        icon: ClipboardList },
   { to: '/admin/patients',      label: 'Пациенты',      icon: UserRound },

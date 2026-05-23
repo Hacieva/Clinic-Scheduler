@@ -79,6 +79,21 @@ function loadColor(pct) {
   return 'bg-emerald-400'
 }
 
+const AVATAR_COLORS = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500',
+  'bg-amber-500', 'bg-rose-500', 'bg-cyan-500',
+]
+function avatarBg(id) { return AVATAR_COLORS[id % AVATAR_COLORS.length] }
+
+const STATUS_DOT = {
+  created:              'bg-blue-500',
+  confirmed:            'bg-emerald-500',
+  completed:            'bg-gray-400',
+  cancelled_by_admin:   'bg-rose-400',
+  cancelled_by_patient: 'bg-rose-400',
+  no_show:              'bg-amber-400',
+}
+
 function doctorStats(appointments, doctorId) {
   const active = appointments.filter(
     (a) =>
@@ -160,8 +175,9 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
             className={`absolute left-0.5 right-0.5 ${bg} ${txt} rounded overflow-hidden text-left px-2 py-1 hover:brightness-95 active:brightness-90 transition-all shadow-sm z-10 select-none`}
             style={{ top: `${top}px`, height: `${height}px` }}
           >
-            <div className="font-semibold text-xs leading-tight truncate">
-              {appt.patient_name}
+            <div className="font-semibold text-xs leading-tight flex items-center gap-1 min-w-0">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 opacity-90 ${STATUS_DOT[appt.status] ?? 'bg-gray-400'}`} />
+              <span className="truncate">{appt.patient_name}</span>
             </div>
             {height >= 36 && (
               <div className="text-[10px] opacity-70 leading-tight mt-0.5 truncate">
@@ -278,16 +294,33 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
                 className="relative border-r border-gray-100 last:border-r-0 overflow-hidden"
                 style={{ minWidth: `${MIN_COL_W}px`, flex: '1 0 0' }}
               >
-                <div className="px-3 py-2.5">
-                  <p className="text-sm font-semibold text-gray-800 truncate">{fullName(d)}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {d.cabinet && (
-                      <p className="text-xs text-gray-400 truncate">Каб. {d.cabinet}</p>
-                    )}
-                    {count > 0 && (
-                      <span className="text-[10px] text-gray-400 font-medium shrink-0">
-                        {count} зап.
-                      </span>
+                <div className="px-3 py-2.5 flex items-start gap-2">
+                  <div className={`w-7 h-7 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[11px] font-bold shrink-0 mt-0.5`}>
+                    {(d.last_name ?? d.first_name ?? '?')[0]}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{fullName(d)}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {d.cabinet && (
+                        <span className="text-xs text-gray-400">Каб. {d.cabinet}</span>
+                      )}
+                      {count > 0 && (
+                        <span className="text-[10px] text-gray-400 font-medium shrink-0">{count} зап.</span>
+                      )}
+                    </div>
+                    {(d.directions ?? []).length > 0 && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {(d.directions ?? []).slice(0, 2).map((dir) => (
+                          <span key={dir.id} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 leading-none">
+                            {dir.name}
+                          </span>
+                        ))}
+                        {(d.directions ?? []).length > 2 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 leading-none">
+                            +{d.directions.length - 2}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

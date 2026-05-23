@@ -15,6 +15,7 @@ import UsersPage from './pages/admin/settings/UsersPage'
 import IntegrationsPage from './pages/admin/settings/IntegrationsPage'
 import PricesPage from './pages/admin/settings/PricesPage'
 import LabPage from './pages/admin/settings/LabPage'
+import DashboardPage from './pages/admin/DashboardPage'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
         <Route element={<RequireAuth allowedRoles={['admin', 'owner']} />}>
           <Route element={<Layout />}>
             {/* Main */}
+            <Route path="/admin/dashboard" element={<DashboardPage />} />
             <Route path="/admin/schedule-grid" element={<ScheduleGridPage />} />
             <Route path="/admin/appointments" element={<AppointmentsPage />} />
             <Route path="/admin/patients" element={<PatientsPage />} />
