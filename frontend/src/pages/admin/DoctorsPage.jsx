@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, Pencil, Trash2, ExternalLink, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
@@ -14,10 +14,8 @@ import {
   setDoctorDirections,
 } from '../../api/doctors'
 import { getDirections } from '../../api/directions'
-import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import Badge from '../../components/Badge'
 
 const schema = z.object({
   last_name: z.string().min(1, 'Введите фамилию'),
@@ -179,6 +177,70 @@ function fullName(row) {
   return [row.last_name, row.first_name, row.middle_name].filter(Boolean).join(' ')
 }
 
+const AVATAR_COLORS = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500',
+  'bg-amber-500', 'bg-rose-500', 'bg-cyan-500',
+]
+function avatarBg(id) { return AVATAR_COLORS[id % AVATAR_COLORS.length] }
+
+function DoctorCard({ doctor, onEdit, onDelete, onNavigate }) {
+  const name = fullName(doctor)
+  const initial = (doctor.last_name ?? doctor.first_name ?? '?')[0]
+  const dirs = doctor.directions ?? []
+  return (
+    <div className={`bg-white rounded-xl border border-gray-200 p-4 flex flex-col gap-3 ${!doctor.is_active ? 'opacity-60' : ''}`}>
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-full ${avatarBg(doctor.id)} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+          {initial}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-gray-900 text-sm leading-tight truncate">{name}</p>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            {doctor.cabinet && <span className="text-xs text-gray-400">Каб. {doctor.cabinet}</span>}
+            {!doctor.is_active && <span className="text-xs text-rose-500 font-medium">Неактивен</span>}
+          </div>
+        </div>
+      </div>
+      {dirs.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {dirs.slice(0, 3).map((d) => (
+            <span key={d.id} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 leading-none">
+              {d.name}
+            </span>
+          ))}
+          {dirs.length > 3 && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 leading-none">
+              +{dirs.length - 3}
+            </span>
+          )}
+        </div>
+      )}
+      <div className="flex items-center pt-1 border-t border-gray-100 -mx-1">
+        <button
+          onClick={() => onNavigate(doctor.id)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+        >
+          <ExternalLink size={12} />
+          Открыть
+        </button>
+        <button
+          onClick={() => onEdit(doctor)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+        >
+          <Pencil size={12} />
+          Изменить
+        </button>
+        <button
+          onClick={() => onDelete(doctor)}
+          className="flex items-center justify-center px-3 py-1.5 text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function DoctorsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -235,77 +297,6 @@ export default function DoctorsPage() {
     onError: () => toast.error('Не удалось деактивировать врача'),
   })
 
-  const columns = [
-    {
-      key: 'name',
-      label: 'Врач',
-      render: (row) => <span className="font-medium">{fullName(row)}</span>,
-    },
-    {
-      key: 'directions',
-      label: 'Направления',
-      render: (row) => {
-        const dirs = row.directions ?? []
-        if (dirs.length === 0) return <span className="text-gray-400">—</span>
-        const shown = dirs.slice(0, 2)
-        const rest = dirs.length - 2
-        return (
-          <div className="flex flex-wrap gap-1">
-            {shown.map((d) => (
-              <Badge key={d.id} variant="active">
-                {d.name}
-              </Badge>
-            ))}
-            {rest > 0 && <Badge variant="inactive">+{rest}</Badge>}
-          </div>
-        )
-      },
-    },
-    {
-      key: 'cabinet',
-      label: 'Кабинет',
-      render: (row) => row.cabinet ?? '—',
-    },
-    {
-      key: 'is_active',
-      label: 'Статус',
-      render: (row) => (
-        <Badge variant={row.is_active ? 'active' : 'inactive'}>
-          {row.is_active ? 'Активен' : 'Неактивен'}
-        </Badge>
-      ),
-    },
-    {
-      key: 'actions',
-      label: '',
-      render: (row) => (
-        <div className="flex items-center gap-2 justify-end">
-          <button
-            onClick={() => navigate(`/admin/doctors/${row.id}`)}
-            className="p-1.5 text-gray-400 hover:text-gray-700 rounded transition-colors"
-            title="Открыть"
-          >
-            <ExternalLink size={15} />
-          </button>
-          <button
-            onClick={() => setEditTarget(row)}
-            className="p-1.5 text-gray-400 hover:text-blue-600 rounded transition-colors"
-            title="Редактировать"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            onClick={() => setDeleteTarget(row)}
-            className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors"
-            title="Деактивировать"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      ),
-    },
-  ]
-
   const editDefaultValues = editTarget
     ? {
         last_name: editTarget.last_name,
@@ -331,12 +322,42 @@ export default function DoctorsPage() {
         </button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={doctors}
-        loading={isLoading}
-        emptyText="Врачей пока нет"
-      />
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 animate-pulse">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-gray-200 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-gray-200 rounded w-3/4" />
+                  <div className="h-3 bg-gray-100 rounded w-1/2" />
+                </div>
+              </div>
+              <div className="flex gap-1.5">
+                <div className="h-5 bg-gray-100 rounded-full w-16" />
+                <div className="h-5 bg-gray-100 rounded-full w-20" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : doctors.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+          <Users size={40} strokeWidth={1.25} className="mb-3 text-gray-300" />
+          <p className="text-sm">Врачей пока нет</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {doctors.map((d) => (
+            <DoctorCard
+              key={d.id}
+              doctor={d}
+              onNavigate={(id) => navigate(`/admin/doctors/${id}`)}
+              onEdit={setEditTarget}
+              onDelete={setDeleteTarget}
+            />
+          ))}
+        </div>
+      )}
 
       <Modal
         isOpen={createOpen}

@@ -10,8 +10,28 @@ import {
   CalendarClock, Lock, BarChart2, FileText, MessagesSquare,
   Check, X, UserRound,
 } from 'lucide-react'
+import { format } from 'date-fns'
 import { getPatient, updatePatient } from '../../api/patients'
+import { getAppointments } from '../../api/appointments'
 import Modal from '../../components/Modal'
+
+const STATUS_DOT = {
+  created:              'bg-blue-400',
+  confirmed:            'bg-emerald-400',
+  completed:            'bg-gray-300',
+  cancelled_by_admin:   'bg-rose-400',
+  cancelled_by_patient: 'bg-rose-400',
+  no_show:              'bg-amber-400',
+}
+
+const STATUS_LABEL = {
+  created:              'Ожидает',
+  confirmed:            'Подтверждён',
+  completed:            'Завершён',
+  cancelled_by_admin:   'Отменён',
+  cancelled_by_patient: 'Отменён пациентом',
+  no_show:              'Не пришёл',
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -238,6 +258,12 @@ export default function PatientDetailPage() {
     queryFn: () => getPatient(id),
   })
 
+  const { data: history = [], isLoading: loadingHistory } = useQuery({
+    queryKey: ['patient-appointments', id],
+    queryFn: () => getAppointments({ patient_id: Number(id), limit: 30 }),
+    enabled: !!patient,
+  })
+
   const updateMut = useMutation({
     mutationFn: (data) => updatePatient(id, data),
     onSuccess: () => {
@@ -439,13 +465,48 @@ export default function PatientDetailPage() {
         )}
       </div>
 
-      {/* ── Future sections ────────────────────────────────────────────── */}
+      {/* ── Appointment history ─────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+        <div className="flex items-center gap-2 mb-4">
+          <CalendarClock size={15} className="text-gray-400" />
+          <h2 className="text-sm font-semibold text-gray-700">История записей</h2>
+          {history.length > 0 && (
+            <span className="ml-auto text-xs text-gray-400 tabular-nums">{history.length}</span>
+          )}
+        </div>
+        {loadingHistory ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">Записей нет</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {history.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 py-2.5">
+                <span className="text-xs text-gray-400 w-24 shrink-0 tabular-nums">
+                  {format(new Date(a.start_at), 'dd.MM.yyyy')}
+                </span>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[a.status] ?? 'bg-gray-300'}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800 truncate">{a.doctor_full_name}</p>
+                  {a.service_name && (
+                    <p className="text-xs text-gray-400 truncate">{a.service_name}</p>
+                  )}
+                </div>
+                <span className="text-xs text-gray-400 shrink-0 hidden sm:block">
+                  {STATUS_LABEL[a.status] ?? a.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Future sections ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        <PlaceholderSection
-          icon={CalendarClock}
-          title="Визиты"
-          description="История записей пациента"
-        />
         <PlaceholderSection
           icon={BarChart2}
           title="Аналитика"
