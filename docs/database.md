@@ -168,3 +168,97 @@ INSERT INTO appointments(patient_id, doctor_id, service_id, direction_id,
   (2, 1, 1, 1, '2026-05-20 10:30+00', '2026-05-20 11:30+00', 'created', 'telegram_bot');
 -- ERROR: conflicting key value violates exclusion constraint "appointments_doctor_id_tstzrange_excl"
 ```
+
+---
+
+## Schema v0.3 — Planned (NOT YET MIGRATED)
+
+> Статус: **Requirements only**. Миграции будут созданы при реализации v0.3.  
+> Детальный PRD: `docs/PRD_v03_cashbox.md`
+
+### Новые таблицы
+
+```
+referrers
+  id, type(internal_doctor|external_doctor|clinic|other),
+  full_name, specialization, workplace, phone,
+  linked_doctor_id? → doctors SET NULL,
+  is_active, timestamps
+
+visits
+  id, patient_id → patients, branch_id → branches,
+  appointment_id? → appointments SET NULL,
+  type(scheduled|walk_in),
+  status(open|in_progress|completed|cancelled),
+  cashier_user_id → users SET NULL,
+  opened_at TIMESTAMPTZ, closed_at TIMESTAMPTZ?, notes,
+  timestamps
+  UNIQUE INDEX(appointment_id) WHERE appointment_id IS NOT NULL
+
+receipts
+  id, visit_id → visits, branch_id, cashier_user_id → users SET NULL,
+  status(draft|paid|cancelled|refunded),
+  payment_method(cash|card|online)?,
+  subtotal BIGINT, discount BIGINT, total BIGINT  -- kopecks
+  paid_at?, cancelled_at?, refunded_at?,
+  cancel_reason?, cancelled_by_user_id → users SET NULL,
+  timestamps
+
+receipt_items
+  id, receipt_id → receipts CASCADE,
+  service_id → services, doctor_id → doctors,
+  quantity INT (>0), unit_price BIGINT, discount BIGINT, total BIGINT  -- kopecks
+  status(pending|performed|cancelled|refunded),
+  performed_at?, performed_by_doctor_id → doctors SET NULL?,
+  cancel_reason?, cancelled_by_user_id → users SET NULL?, cancelled_at?,
+  timestamps
+
+doctor_payouts
+  id, doctor_id → doctors, branch_id → branches,
+  period_from DATE, period_to DATE,
+  total_amount BIGINT, paid_amount BIGINT  -- kopecks
+  status(draft|approved|paid|partially_paid),
+  approved_by_user_id → users SET NULL?, approved_at?,
+  paid_at?, paid_by_user_id → users SET NULL?,
+  notes, timestamps
+  CHECK(period_from <= period_to)
+  CHECK(paid_amount <= total_amount)
+
+doctor_payout_items
+  id, payout_id → doctor_payouts CASCADE,
+  receipt_item_id → receipt_items,
+  doctor_id → doctors, service_id → services,
+  service_name VARCHAR(300),  -- snapshot
+  performed_at TIMESTAMPTZ,
+  gross_amount BIGINT,        -- kopecks, snapshot
+  payout_rate DECIMAL(5,4),   -- e.g. 0.3500 = 35%
+  payout_amount BIGINT,       -- kopecks
+  created_at
+  UNIQUE(receipt_item_id)     -- item в одной выплате максимум
+```
+
+### Изменения существующих таблиц
+
+```
+appointments
+  + referrer_id? → referrers SET NULL  (nullable, additive)
+```
+
+### Planned migration files
+
+```
+backend/migrations/
+  20260521100000_add_referrers.sql
+  20260521100001_add_visits_receipts.sql
+  20260521100002_add_payouts.sql
+  20260521100003_appointments_add_referrer.sql
+```
+
+### Ключевые бизнес-правила на уровне БД
+
+| Правило | Реализация |
+|---|---|
+| Один appointment → один visit | `UNIQUE INDEX visits(appointment_id) WHERE appointment_id IS NOT NULL` |
+| Receipt item → одна выплата | `UNIQUE INDEX doctor_payout_items(receipt_item_id)` |
+| paid_amount ≤ total_amount | `CHECK(paid_amount <= total_amount)` на doctor_payouts |
+| Все суммы в копейках | `BIGINT` для всех денежных полей |
