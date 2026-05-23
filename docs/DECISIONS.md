@@ -211,6 +211,61 @@ Refunded/cancelled items не участвуют в выплатах.
 
 ---
 
+## ADR-009: Services — глобальный прайс клиники без привязки к врачу/филиалу
+
+**Дата:** 2026-05-23  
+**Статус:** Принято
+
+### Контекст
+
+Исходная модель: `services.doctor_id` — услуга принадлежит одному врачу. Проблема: "Консультация дерматолога" у доктора Иванова не может использоваться доктором Петровым без дублирования записи.
+
+### Решение
+
+```
+services     — глобальный прайс клиники (без doctor_id, без branch_id)
+  + category: consultation | ultrasound | lab | procedure | other
+  + is_system: true для sentinel-записей (не показывать в UI как обычную услугу)
+
+doctor_services  [M2M junction]
+  doctor_id → doctors CASCADE
+  service_id → services CASCADE
+  UNIQUE(doctor_id, service_id)
+```
+
+Правила:
+- `services` не имеют `branch_id` — branch-специфичность определяется через врачей
+- `services.price` — единая цена, per-doctor override **не делаем в v0.3**
+- Удаление только через `is_active=false` — история receipts/payouts должна сохраняться
+- `is_system=true` — внутренние sentinel-записи (напр. "Прочая услуга"); UI их не показывает в стандартном выборе
+- КМН-надбавка решается отдельной строкой прайса: "Консультация дерматолога КМН" ≠ "Консультация дерматолога"
+
+### Изменение валидации appointment
+
+```
+Было: service.doctor_id == appointment.doctor_id → ErrServiceMismatch
+Стало: EXISTS(doctor_services WHERE doctor_id=? AND service_id=?) → ErrServiceMismatch
+```
+
+### UX-правила
+
+- DoctorServicesTab: цена read-only; ссылка "Изменить в прайсе" → ServicesPage
+- Кнопка удаления у врача называется "Убрать услугу у врача" (не "Удалить услугу")
+- WalkInPage: два flow — doctor-first (getDoctorServices) и service-first (getServices?search=, возвращает doctors[])
+
+### Причины
+
+- Консультации одного типа стоят одинаково независимо от врача — кроме КМН-надбавки, которая решается отдельной строкой
+- Один прайс проще поддерживать, проще аудит, проще сравнение
+- Doctors = branch-specific; services = clinic-wide; их пересечение = doctor_services
+
+### Компромиссы
+
+- Нельзя задать персональную цену без модели override (решение: v0.4 по необходимости)
+- Назначение услуг врачам — ручная операция (нет автоматического наследования по direction)
+
+---
+
 ## ADR-008: Финансовые записи иммутабельны — только смена статуса
 
 **Дата:** 2026-05-23  

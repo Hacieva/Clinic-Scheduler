@@ -99,8 +99,16 @@ doctor_directions  [M2M]
   UNIQUE(doctor_id, direction_id)
 
 services
-  id, doctor_id → doctors CASCADE, direction_id → directions CASCADE,
-  name, description, duration_minutes (>0), price BIGINT (kopecks, nullable), is_active, timestamps
+  id, direction_id? → directions SET NULL,
+  category VARCHAR(30) CHECK IN ('consultation','ultrasound','lab','procedure','other'),
+  name, description, duration_minutes (>0), price BIGINT (kopecks, nullable),
+  is_active, is_system, timestamps
+  -- is_system=true: sentinel records (e.g. "Прочая услуга"), not shown in standard UI
+  -- no doctor_id, no branch_id — global clinic catalog (see ADR-009)
+
+doctor_services  [M2M]
+  id, doctor_id → doctors CASCADE, service_id → services CASCADE
+  UNIQUE(doctor_id, service_id)
 
 doctor_working_hours
   id, doctor_id → doctors CASCADE, day_of_week(1-7),
