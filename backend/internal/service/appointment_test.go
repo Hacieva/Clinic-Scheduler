@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -477,4 +479,87 @@ func TestCanTransition_InvalidPaths(t *testing.T) {
 	for _, tc := range cases {
 		assert.False(t, canTransition(tc.from, tc.to), "expected invalid: %s→%s", tc.from, tc.to)
 	}
+}
+
+// — Concurrent slot protection —
+
+// slotOnceRepo simulates a DB with EXCLUDE GIST: the first Create wins,
+// all subsequent calls for the same slot return ErrSlotTaken.
+type slotOnceRepo struct {
+	mu      sync.Mutex
+	created bool
+}
+
+func (r *slotOnceRepo) Create(_ context.Context, _ repository.CreateAppointmentInput) (*model.Appointment, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.created {
+		return nil, apperrors.ErrSlotTaken
+	}
+	r.created = true
+	return &model.Appointment{
+		ID: 1, DoctorID: 1, ServiceID: 1,
+		Status:    model.StatusCreated,
+		StartAt:   time.Now().Add(2 * time.Hour),
+		EndAt:     time.Now().Add(3 * time.Hour),
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}, nil
+}
+
+func (r *slotOnceRepo) GetByID(_ context.Context, _ int64) (*repository.AppointmentDetail, error) {
+	return nil, nil
+}
+func (r *slotOnceRepo) List(_ context.Context, _ repository.AppointmentFilter) ([]repository.AppointmentDetail, error) {
+	return nil, nil
+}
+func (r *slotOnceRepo) UpdateStatus(_ context.Context, _ int64, _ model.AppointmentStatus, _ *int64, _ *string) error {
+	return nil
+}
+
+// TestAppointmentCreate_ConcurrentSlot spawns 100 goroutines that all try to
+// book the same time slot. Exactly one must succeed; all others must get
+// ErrSlotTaken. Run with -race to catch data races in the service layer.
+func TestAppointmentCreate_ConcurrentSlot(t *testing.T) {
+	const workers = 100
+
+	svc := NewAppointmentService(
+		&slotOnceRepo{},
+		&mockDoctorRepo{doctor: sampleDoctorWithDir()},
+		&mockServiceRepo{svc: activeSvc()},
+	)
+
+	input := sampleCreateInput()
+
+	var (
+		successCount  atomic.Int64
+		conflictCount atomic.Int64
+		otherCount    atomic.Int64
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	ready := make(chan struct{})
+
+	for range workers {
+		go func() {
+			defer wg.Done()
+			<-ready // all goroutines start at once
+			_, err := svc.Create(context.Background(), input)
+			switch {
+			case err == nil:
+				successCount.Add(1)
+			case err == apperrors.ErrSlotTaken:
+				conflictCount.Add(1)
+			default:
+				otherCount.Add(1)
+			}
+		}()
+	}
+
+	close(ready)
+	wg.Wait()
+
+	assert.Equal(t, int64(1), successCount.Load(), "exactly one goroutine must succeed")
+	assert.Equal(t, int64(workers-1), conflictCount.Load(), "all other goroutines must get ErrSlotTaken")
+	assert.Equal(t, int64(0), otherCount.Load(), "no unexpected errors")
 }
