@@ -231,6 +231,7 @@ CREATE TABLE receipt_items (
   id                      BIGSERIAL PRIMARY KEY,
   receipt_id              BIGINT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
   service_id              BIGINT NOT NULL REFERENCES services(id),
+                          -- для "Прочая услуга" → FK на sentinel-запись в services
   doctor_id               BIGINT NOT NULL REFERENCES doctors(id),
   quantity                INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
   unit_price              BIGINT NOT NULL,          -- снапшот цены на момент создания
@@ -238,6 +239,10 @@ CREATE TABLE receipt_items (
   total                   BIGINT NOT NULL,          -- (unit_price - discount) * quantity
   status                  VARCHAR(20) NOT NULL DEFAULT 'pending'
                           CHECK (status IN ('pending', 'performed', 'cancelled', 'refunded')),
+  needs_review            BOOLEAN NOT NULL DEFAULT false,
+                          -- true = "Прочая услуга", требует проверки менеджера
+  custom_service_name     VARCHAR(300),
+                          -- заполняется если needs_review=true; null иначе
   performed_at            TIMESTAMPTZ,
   performed_by_doctor_id  BIGINT REFERENCES doctors(id) ON DELETE SET NULL,
   cancel_reason           TEXT,
@@ -254,6 +259,10 @@ CREATE INDEX receipt_items_service_id_idx ON receipt_items(service_id);
 CREATE INDEX receipt_items_performed_idx
   ON receipt_items(doctor_id, performed_at)
   WHERE status = 'performed';
+-- Очередь проверки "прочих" услуг для менеджера
+CREATE INDEX receipt_items_needs_review_idx
+  ON receipt_items(needs_review, created_at DESC)
+  WHERE needs_review = true;
 ```
 
 ### referrers
@@ -464,6 +473,64 @@ admin/owner initiates refund
              old_values={status:'paid'}, new_values={status:'refunded', reason:...}
 ```
 
+### Service selection UX — два flow
+
+Кассир может добавить услугу в квитанцию двумя способами. Оба flow
+заканчиваются одним и тем же результатом: `receipt_item {service_id, doctor_id, unit_price, quantity}`.
+
+#### Flow A — Doctor-first (пациент знает врача)
+
+```
+1. Кассир выбирает врача из списка
+2. Система загружает услуги этого врача (pricesheet)
+3. Кассир выбирает услугу из списка
+4. Строка добавляется в квитанцию
+```
+
+#### Flow B — Service-first (пациент знает только услугу)
+
+```
+1. Кассир вводит название услуги (autocomplete по services.name)
+2. Система показывает подходящие услуги + врачей, которые их выполняют
+3. Кассир выбирает нужную пару (услуга + врач)
+4. Строка добавляется в квитанцию
+```
+
+#### Правило: все услуги — только из прайса
+
+Свободный ручной ввод названия услуги **запрещён как основной flow**.
+
+Причина — ломает:
+- Выручку по услугам (нет `service_id` → нет агрегации)
+- Зарплаты врачей (payout считается по `receipt_item.service_id`)
+- Аналитику популярных услуг
+
+#### Исключение: "Прочая услуга / Нет в прайсе"
+
+Доступна **только через отдельную кнопку** (не дефолтный flow).
+
+```
+UX: кнопка "+ Прочая услуга" внизу секции услуг
+    → открывается мини-форма:
+        Врач:        [dropdown — обязательно]
+        Услуга:      [текстовый ввод — обязательно]
+        Стоимость:   [число — обязательно]
+        Комментарий: [текстовый ввод — обязательно]
+    → добавляется в квитанцию с пометкой ⚠ "На проверке"
+```
+
+DB-представление:
+- `service_id` → FK на sentinel-запись `"Прочая услуга"` в таблице `services`
+  (создаётся при seed; `is_active=false` — не показывать в обычном выборе)
+- `needs_review = true`
+- `custom_service_name` = то, что ввёл кассир
+- `unit_price` = то, что ввёл кассир
+
+Ограничения:
+- `needs_review = true` → строка **не включается в payout** до снятия флага менеджером
+- В отчёте смены: `needs_review` строки выделяются отдельной строкой "Прочие / на проверке"
+- Менеджер снимает флаг через `PATCH /receipt_items/:id/review` с указанием правильного `service_id`
+
 ### Cashier shift report (read-only)
 
 ```
@@ -515,7 +582,11 @@ GET    /api/v1/receipts/:id
        Auth: admin | owner
 
 POST   /api/v1/receipts/:id/items
-       Body: {service_id, doctor_id, quantity?, discount?}
+       Body: {service_id, doctor_id, quantity?, discount?,
+              needs_review?, custom_service_name?, unit_price_override?}
+       -- needs_review=true: service_id → sentinel "Прочая услуга";
+       --   custom_service_name обязателен; unit_price_override обязателен
+       -- needs_review=false (default): unit_price берётся из services.price (snapshot)
        Auth: admin | owner
        Validation: receipt.status = 'draft' only
 
@@ -539,6 +610,20 @@ POST   /api/v1/receipts/:id/refund
 
 POST   /api/v1/receipts/:id/items/:itemId/perform
        Body: {performed_by_doctor_id?, performed_at?}
+       Auth: admin | owner
+
+PATCH  /api/v1/receipt-items/:id/review
+       Body: {service_id, needs_review: false}
+       -- снять флаг needs_review, назначить правильный service_id
+       Auth: owner only
+
+GET    /api/v1/receipt-items?needs_review=true&branch_id=&from=&to=
+       -- очередь на проверку для менеджера
+       Auth: owner only
+
+GET    /api/v1/services?search=&is_active=true
+       -- service-first autocomplete: поиск услуг по названию,
+       -- в ответе каждая услуга возвращает doctors[] (кто выполняет)
        Auth: admin | owner
 ```
 
@@ -644,6 +729,8 @@ GET    /api/v1/reports/audit
 | **Скорость 20-40 сек** для кассира | HIGH | Все autocomplete < 50ms. Индексы на `patients(phone)`, `services(is_active)`, `referrers(full_name)`. Нет N+1 в cashier API. |
 | **Audit log объём** | LOW | Индекс (entity_type, entity_id), (created_at DESC). Партиционирование по месяцу — v0.4. |
 | **Expenses (расходы) не определены** | MEDIUM | Gap — см. раздел 11. Смена-отчёт будет неполным без `expenses` таблицы. |
+| **Свободный ввод услуги** ломает отчёты и выплаты | HIGH | Основной flow — только из прайса (service_id). Свободный ввод доступен только через "Прочая услуга" + обязательный комментарий + `needs_review=true`. Backend отклоняет `POST /receipts/:id/items` без валидного `service_id`. |
+| **"Прочая услуга" попадает в payout** | MEDIUM | `needs_review=true` → item не включается в `POST /payouts`. Backend фильтр: `WHERE status='performed' AND needs_review=false`. |
 | **Выплата после возврата** | HIGH | После refund: если item уже включён в payout → система предупреждает, ручная корректировка. Backend НЕ удаляет payout_item автоматически — финансовые записи иммутабельны. |
 
 ---
@@ -713,9 +800,14 @@ src/api/referrers.js
 ```
 
 UX требования (walk-in ≤ 40 сек):
-- Patient search: autocomplete с debounce 200ms
-- Service selection: autocomplete + быстрый список «частые услуги»
-- Payment: один клик на метод оплаты → подтверждение → готово
+- Patient search: autocomplete с debounce 200ms, поиск по имени и телефону
+- Service selection: два flow — doctor-first и service-first (см. раздел 6)
+  - Doctor-first: выбрать врача → выбрать его услугу из прайса
+  - Service-first: ввести название услуги → выбрать врача из предложенных
+  - "Прочая услуга": отдельная кнопка, обязательный комментарий, needs_review=true
+- Payment: один клик на метод оплаты (cash/card/online) → подтверждение → готово
+- Новый endpoint: `GET /api/v1/services?search=&doctor_id=` — для service-first autocomplete
+- Manager review queue: `GET /api/v1/receipt-items?needs_review=true` — для менеджера
 
 ### Phase 5 — Backend + Frontend: Payouts (DANGEROUS)
 
