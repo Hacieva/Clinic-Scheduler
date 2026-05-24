@@ -5,11 +5,11 @@ export default function RequireAuth({ allowedRoles }) {
   const accessToken = useAuthStore((s) => s.accessToken)
   const user = useAuthStore((s) => s.user)
 
-  if (!accessToken) {
+  if (!accessToken || !user) {
     return <Navigate to="/login" replace />
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/login" replace />
   }
 

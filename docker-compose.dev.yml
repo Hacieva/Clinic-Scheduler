@@ -2,3 +2,8 @@ services:
   postgres:
     ports:
       - "5432:5432"
+
+  backend:
+    # Dev only: expose backend API for local curl/Postman testing.
+    ports:
+      - "8000:8000"

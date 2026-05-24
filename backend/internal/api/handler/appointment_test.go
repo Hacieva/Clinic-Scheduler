@@ -43,7 +43,7 @@ func (m *mockApptRepo) List(_ context.Context, _ repository.AppointmentFilter) (
 	return m.list, m.err
 }
 
-func (m *mockApptRepo) UpdateStatus(_ context.Context, _ int64, _ model.AppointmentStatus, _ *int64, _ *string) error {
+func (m *mockApptRepo) UpdateStatus(_ context.Context, _ int64, _, _ model.AppointmentStatus, _ *int64, _ *string) error {
 	return m.updateErr
 }
 

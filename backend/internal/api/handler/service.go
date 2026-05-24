@@ -42,7 +42,7 @@ func (h *ServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ServiceHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	_, ok := parseIDParam(w, r)
+	doctorID, ok := parseIDParam(w, r)
 	if !ok {
 		return
 	}
@@ -57,6 +57,10 @@ func (h *ServiceHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	if svc.DoctorID != doctorID {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
 		return
 	}
 	writeJSON(w, http.StatusOK, svc)

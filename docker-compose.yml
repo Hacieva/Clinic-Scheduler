@@ -9,6 +9,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - clinic_net
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clinic} -d ${POSTGRES_DB:-clinic_db}"]
       interval: 5s
@@ -22,12 +23,11 @@ services:
     environment:
       PORT: "8000"
       DATABASE_URL: postgres://${POSTGRES_USER:-clinic}:${POSTGRES_PASSWORD:-clinic_pass}@postgres:5432/${POSTGRES_DB:-clinic_db}?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
-      BOT_API_SECRET: ${BOT_API_SECRET:-change_me_bot_secret}
-    ports:
-      - "8000:8000"
+      JWT_SECRET: ${JWT_SECRET}
+      BOT_API_SECRET: ${BOT_API_SECRET}
     networks:
       - clinic_net
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,9 +45,10 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_URL: postgres://${POSTGRES_USER:-clinic}:${POSTGRES_PASSWORD:-clinic_pass}@postgres:5432/${POSTGRES_DB:-clinic_db}?sslmode=disable
       BACKEND_URL: http://backend:8000
-      BOT_API_SECRET: ${BOT_API_SECRET:-change_me_bot_secret}
+      BOT_API_SECRET: ${BOT_API_SECRET}
     networks:
       - clinic_net
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +63,7 @@ services:
       - "5173:80"
     networks:
       - clinic_net
+    restart: unless-stopped
     depends_on:
       - backend
 

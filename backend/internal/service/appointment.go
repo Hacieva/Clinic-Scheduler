@@ -132,7 +132,7 @@ func (s *AppointmentService) changeStatus(
 	if !canTransition(detail.Status, to) {
 		return apperrors.ErrInvalidStatusTransition
 	}
-	return s.repo.UpdateStatus(ctx, id, to, changedByUserID, comment)
+	return s.repo.UpdateStatus(ctx, id, detail.Status, to, changedByUserID, comment)
 }
 
 func (s *AppointmentService) Confirm(ctx context.Context, id int64, changedByUserID *int64) error {

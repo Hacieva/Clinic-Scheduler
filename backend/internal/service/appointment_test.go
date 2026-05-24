@@ -36,7 +36,7 @@ func (m *mockAppointmentRepo) List(_ context.Context, _ repository.AppointmentFi
 	return m.list, m.err
 }
 
-func (m *mockAppointmentRepo) UpdateStatus(_ context.Context, _ int64, _ model.AppointmentStatus, _ *int64, _ *string) error {
+func (m *mockAppointmentRepo) UpdateStatus(_ context.Context, _ int64, _, _ model.AppointmentStatus, _ *int64, _ *string) error {
 	return m.updateErr
 }
 
@@ -512,7 +512,7 @@ func (r *slotOnceRepo) GetByID(_ context.Context, _ int64) (*repository.Appointm
 func (r *slotOnceRepo) List(_ context.Context, _ repository.AppointmentFilter) ([]repository.AppointmentDetail, error) {
 	return nil, nil
 }
-func (r *slotOnceRepo) UpdateStatus(_ context.Context, _ int64, _ model.AppointmentStatus, _ *int64, _ *string) error {
+func (r *slotOnceRepo) UpdateStatus(_ context.Context, _ int64, _, _ model.AppointmentStatus, _ *int64, _ *string) error {
 	return nil
 }
 

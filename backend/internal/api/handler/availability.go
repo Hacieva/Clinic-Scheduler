@@ -48,6 +48,12 @@ func (h *AvailabilityHandler) GetAvailability(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	const maxRangeDays = 90
+	if to.Sub(from) > maxRangeDays*24*time.Hour {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "date range cannot exceed 90 days"})
+		return
+	}
+
 	durationMin, err := h.svc.GetServiceDuration(r.Context(), serviceID)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {

@@ -156,7 +156,7 @@ func main() {
 			})
 
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireRole("admin"))
+				r.Use(middleware.RequireRole("admin", "owner"))
 				r.Post("/directions", directionHandler.Create)
 				r.Put("/directions/{id}", directionHandler.Update)
 				r.Delete("/directions/{id}", directionHandler.Delete)

@@ -17,11 +17,13 @@ type RateLimiter struct {
 }
 
 func NewRateLimiter(max int, window time.Duration) *RateLimiter {
-	return &RateLimiter{
+	rl := &RateLimiter{
 		entries: make(map[string][]time.Time),
 		max:     max,
 		window:  window,
 	}
+	go rl.cleanupLoop()
+	return rl
 }
 
 // Allow returns true if the IP is within the allowed rate, false if it should be rejected.
@@ -51,6 +53,35 @@ func (rl *RateLimiter) Allow(ip string) bool {
 	return true
 }
 
+// cleanupLoop periodically evicts IPs whose entire history is outside the window.
+// This prevents unbounded map growth when many unique IPs hit the rate-limited endpoint.
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.evictStale()
+	}
+}
+
+func (rl *RateLimiter) evictStale() {
+	cutoff := time.Now().Add(-rl.window)
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	for ip, times := range rl.entries {
+		valid := times[:0]
+		for _, t := range times {
+			if t.After(cutoff) {
+				valid = append(valid, t)
+			}
+		}
+		if len(valid) == 0 {
+			delete(rl.entries, ip)
+		} else {
+			rl.entries[ip] = valid
+		}
+	}
+}
+
 // LoginRateLimit returns a chi-compatible middleware that limits the route to
 // maxAttempts requests per window per client IP. Returns 429 on breach.
 func LoginRateLimit(maxAttempts int, window time.Duration) func(http.Handler) http.Handler {
@@ -69,19 +100,11 @@ func LoginRateLimit(maxAttempts int, window time.Duration) func(http.Handler) ht
 	}
 }
 
-// clientIP extracts the real client IP, preferring X-Forwarded-For when set.
+// clientIP extracts the real client IP from RemoteAddr only.
+// X-Forwarded-For is intentionally ignored: the backend port is only accessible
+// from within the Docker network (via nginx), so RemoteAddr is the nginx proxy IP.
+// Trusting XFF from an unauthenticated header would allow rate-limit bypass.
 func clientIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		// X-Forwarded-For can be "client, proxy1, proxy2" — take the first
-		if idx := len(fwd); idx > 0 {
-			for i := 0; i < len(fwd); i++ {
-				if fwd[i] == ',' {
-					return fwd[:i]
-				}
-			}
-			return fwd
-		}
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

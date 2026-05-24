@@ -62,7 +62,11 @@ func TestLoginRateLimit_Returns429AfterLimit(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, makeReq())
 }
 
-func TestLoginRateLimit_XForwardedFor(t *testing.T) {
+// TestLoginRateLimit_XForwardedForIgnored verifies that X-Forwarded-For is NOT trusted.
+// All requests sharing the same RemoteAddr must be rate-limited together, regardless of
+// what XFF header the client supplies. Trusting a client-supplied XFF would allow
+// trivial bypass of the rate limit.
+func TestLoginRateLimit_XForwardedForIgnored(t *testing.T) {
 	handler := LoginRateLimit(2, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -76,8 +80,10 @@ func TestLoginRateLimit_XForwardedFor(t *testing.T) {
 		return rec.Code
 	}
 
+	// Two requests succeed (limit=2), both from the same RemoteAddr.
 	assert.Equal(t, http.StatusOK, makeReq("192.168.1.1"))
 	assert.Equal(t, http.StatusOK, makeReq("192.168.1.1"))
-	assert.Equal(t, http.StatusTooManyRequests, makeReq("192.168.1.1"))
-	assert.Equal(t, http.StatusOK, makeReq("192.168.1.2"), "different IP must not be blocked")
+	// Third request from the same RemoteAddr is blocked even with a different XFF value —
+	// XFF is ignored so rotating it must not bypass the limit.
+	assert.Equal(t, http.StatusTooManyRequests, makeReq("192.168.1.2"), "spoofed XFF must not bypass rate limit")
 }

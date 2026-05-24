@@ -19,7 +19,7 @@ type AppointmentRepository interface {
 	Create(ctx context.Context, input CreateAppointmentInput) (*model.Appointment, error)
 	GetByID(ctx context.Context, id int64) (*AppointmentDetail, error)
 	List(ctx context.Context, filter AppointmentFilter) ([]AppointmentDetail, error)
-	UpdateStatus(ctx context.Context, id int64, newStatus model.AppointmentStatus, changedByUserID *int64, comment *string) error
+	UpdateStatus(ctx context.Context, id int64, fromStatus, newStatus model.AppointmentStatus, changedByUserID *int64, comment *string) error
 }
 
 // CreateAppointmentInput carries all data needed to atomically create an appointment.
@@ -281,7 +281,7 @@ func (r *AppointmentRepo) List(ctx context.Context, filter AppointmentFilter) ([
 func (r *AppointmentRepo) UpdateStatus(
 	ctx context.Context,
 	id int64,
-	newStatus model.AppointmentStatus,
+	fromStatus, newStatus model.AppointmentStatus,
 	changedByUserID *int64,
 	comment *string,
 ) error {
@@ -300,6 +300,12 @@ func (r *AppointmentRepo) UpdateStatus(
 			return apperrors.ErrNotFound
 		}
 		return err
+	}
+
+	// Re-validate the transition inside the lock: a concurrent status change between
+	// the service-layer pre-check and this transaction would otherwise go undetected.
+	if oldStatus != fromStatus {
+		return apperrors.ErrInvalidStatusTransition
 	}
 
 	if _, err = tx.Exec(ctx,
