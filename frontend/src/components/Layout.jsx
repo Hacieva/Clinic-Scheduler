@@ -3,7 +3,8 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays, UserRound,
-  LayoutGrid, Settings, Building2, UserCog, Plug2, Tag, FlaskConical, ChevronDown, BarChart3, CreditCard,
+  LayoutDashboard, Settings, Building2, UserCog, Plug2, Tag, FlaskConical,
+  ChevronDown, BarChart3,
 } from 'lucide-react'
 import useAuthStore from '../stores/auth'
 import useBranchStore from '../stores/branch'
@@ -14,12 +15,13 @@ import { clinic } from '../lib/clinic.config'
 // ─── Nav definitions ──────────────────────────────────────────────────────────
 
 const MAIN_NAV = [
-  { to: '/admin/dashboard',     label: 'Сводка',        icon: BarChart3 },
-  { to: '/admin/schedule-grid', label: 'Журнал записи', icon: LayoutGrid },
-  { to: '/admin/appointments',  label: 'Записи',        icon: ClipboardList },
-  { to: '/admin/patients',      label: 'Пациенты',      icon: UserRound },
-  { to: '/admin/doctors',       label: 'Врачи',         icon: Users },
-  { to: '/admin/cashbox',       label: 'Касса',         icon: CreditCard },
+  { to: '/admin/dashboard',     label: 'Главная',      icon: LayoutDashboard },
+  { to: '/admin/schedule-grid', label: 'Расписание',   icon: CalendarDays },
+  { to: '/admin/crm',           label: 'CRM / Задачи', icon: ClipboardList },
+  { to: '/admin/patients',      label: 'Пациенты',     icon: UserRound },
+  { to: '/admin/reports',       label: 'Отчёты',       icon: BarChart3 },
+  { to: '/admin/services',      label: 'Услуги',       icon: Tag },
+  { to: '/admin/doctors',       label: 'Сотрудники',   icon: Users },
 ]
 
 const SETTINGS_NAV = [
@@ -27,8 +29,6 @@ const SETTINGS_NAV = [
   { to: '/admin/settings/branches',     label: 'Филиалы',       icon: Building2 },
   { to: '/admin/settings/users',        label: 'Пользователи',  icon: UserCog },
   { to: '/admin/settings/directions',   label: 'Направления',   icon: BookOpen },
-  { to: '/admin/settings/services',     label: 'Услуги',        icon: Tag },
-  { to: '/admin/settings/prices',       label: 'Прайсы',        icon: Tag },
   { to: '/admin/settings/integrations', label: 'Интеграции',    icon: Plug2 },
   { to: '/admin/settings/lab',          label: 'Лаборатория',   icon: FlaskConical },
 ]

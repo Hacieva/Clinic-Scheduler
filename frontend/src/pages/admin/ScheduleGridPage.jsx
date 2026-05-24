@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { addDays, subDays, format, isToday } from 'date-fns'
+import {
+  addDays, subDays, format, isToday, startOfMonth, endOfMonth,
+  getDay, addMonths, subMonths, isSameMonth, isSameDay,
+} from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX, Users,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import AppointmentGrid from '../../components/AppointmentGrid'
 import Modal from '../../components/Modal'
@@ -45,6 +50,85 @@ const STATUS_VARIANTS = {
 
 const TERMINAL = new Set(['cancelled_by_admin', 'cancelled_by_patient', 'completed', 'no_show'])
 
+const AVATAR_COLORS = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500',
+  'bg-amber-500', 'bg-rose-500', 'bg-cyan-500',
+]
+function avatarBg(id) { return AVATAR_COLORS[id % AVATAR_COLORS.length] }
+
+// ─── MiniCalendar ─────────────────────────────────────────────────────────────
+
+function MiniCalendar({ selected, onChange }) {
+  const [view, setView] = useState(() => startOfMonth(selected))
+
+  useEffect(() => {
+    if (!isSameMonth(selected, view)) {
+      setView(startOfMonth(selected))
+    }
+  }, [selected]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const monthEnd = endOfMonth(view)
+  const startCol = (getDay(view) + 6) % 7 // Mon=0
+
+  const cells = []
+  for (let i = 0; i < startCol; i++) cells.push(null)
+  for (let d = 1; d <= monthEnd.getDate(); d++) {
+    cells.push(new Date(view.getFullYear(), view.getMonth(), d))
+  }
+
+  return (
+    <div className="px-3 pb-3">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          onClick={() => setView((v) => subMonths(v, 1))}
+          className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+        >
+          <ChevronLeft size={13} />
+        </button>
+        <span className="text-xs font-semibold text-gray-700 capitalize select-none">
+          {format(view, 'LLLL yyyy', { locale: ru })}
+        </span>
+        <button
+          onClick={() => setView((v) => addMonths(v, 1))}
+          className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+        >
+          <ChevronRight size={13} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5 text-center mb-0.5">
+        {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+          <span key={d} className="text-[10px] text-gray-400 py-0.5 font-medium">
+            {d}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((day, i) =>
+          day ? (
+            <button
+              key={i}
+              onClick={() => onChange(day)}
+              className={`text-[11px] rounded py-1 leading-none transition-colors ${
+                isSameDay(day, selected)
+                  ? 'bg-blue-600 text-white font-semibold'
+                  : isToday(day)
+                  ? 'bg-blue-50 text-blue-700 font-semibold'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {day.getDate()}
+            </button>
+          ) : (
+            <span key={i} />
+          ),
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── CreateForm ───────────────────────────────────────────────────────────────
 
 const createSchema = z.object({
@@ -58,10 +142,7 @@ const createSchema = z.object({
 
 function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, initialDoctorId, initialStartAt }) {
   const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors },
+    register, handleSubmit, setValue, formState: { errors },
   } = useForm({
     resolver: zodResolver(createSchema),
     defaultValues: {
@@ -77,7 +158,6 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
   const { onChange: rhfDoctorChange, ...restDoctor } = register('doctor_id')
   const { ref: patientNameRef } = register('patient_name')
 
-  // Patient quick-search
   const [patientSearch, setPatientSearch] = useState('')
   const [patientQuery, setPatientQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
@@ -108,8 +188,7 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const capitalizeWords = (val) =>
-    val.replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
+  const capitalizeWords = (val) => val.replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
 
   const highlight = (text, query) => {
     if (!query || query.length < 2) return text
@@ -118,7 +197,9 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
     return (
       <>
         {text.slice(0, idx)}
-        <mark className="bg-yellow-100 text-yellow-900 not-italic font-semibold rounded-sm">{text.slice(idx, idx + query.length)}</mark>
+        <mark className="bg-yellow-100 text-yellow-900 not-italic font-semibold rounded-sm">
+          {text.slice(idx, idx + query.length)}
+        </mark>
         {text.slice(idx + query.length)}
       </>
     )
@@ -149,14 +230,12 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
     setSelectedIndex(-1)
   }
 
-  // Notify parent about pre-filled doctor so services load
   useEffect(() => {
     if (initialDoctorId) onDoctorChange(String(initialDoctorId))
   }, [initialDoctorId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-
       <div className="grid grid-cols-2 gap-3">
         <div className="relative" ref={containerRef}>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -176,7 +255,7 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
             onKeyDown={handleKeyDown}
             placeholder="Введите ФИО или телефон…"
             autoComplete="off"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {showDropdown && patientResults.length > 0 && (
             <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
@@ -189,7 +268,9 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
                     idx === selectedIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <span className="font-medium text-gray-900">{highlight(p.full_name, patientQuery)}</span>
+                  <span className="font-medium text-gray-900">
+                    {highlight(p.full_name, patientQuery)}
+                  </span>
                   {p.phone && <span className="text-gray-400 ml-2 text-xs">{p.phone}</span>}
                 </button>
               ))}
@@ -205,7 +286,7 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
           </label>
           <input
             type="tel"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             {...register('patient_phone')}
           />
           {errors.patient_phone && (
@@ -268,22 +349,20 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
         </label>
         <input
           type="datetime-local"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           {...register('start_at')}
         />
         {errors.start_at && (
           <p className="mt-1 text-xs text-red-600">{errors.start_at.message}</p>
         )}
-        <p className="mt-1 text-xs text-gray-400">
-          Длительность рассчитывается автоматически по услуге
-        </p>
+        <p className="mt-1 text-xs text-gray-400">Длительность рассчитывается по услуге</p>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
         <input
           type="text"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           {...register('patient_comment')}
         />
       </div>
@@ -310,8 +389,7 @@ function CancelModal({ target, onClose, onConfirm, isLoading }) {
       {target && (
         <>
           <p className="text-sm text-gray-600 mb-4">
-            Запись пациента <span className="font-medium">{target.patient_name}</span> будет
-            отменена.
+            Запись пациента <span className="font-medium">{target.patient_name}</span> будет отменена.
           </p>
           <input
             type="text"
@@ -419,19 +497,40 @@ export default function ScheduleGridPage() {
   const [date, setDate] = useState(new Date())
   const activeBranchId = useBranchStore((s) => s.activeBranchId)
 
+  // Left panel filter state: null = all visible
+  const [checkedDoctorIds, setCheckedDoctorIds] = useState(null)
+
   // Modal state
   const [selectedAppt, setSelectedAppt] = useState(null)
-  const [createModal, setCreateModal] = useState(null) // { doctorId, startAt } | null
+  const [createModal, setCreateModal] = useState(null)
   const [cancelTarget, setCancelTarget] = useState(null)
   const [simpleAction, setSimpleAction] = useState(null)
   const [createDoctorId, setCreateDoctorId] = useState('')
 
-  // ── Data ──
-  const { data: doctors = [] } = useQuery({
-    queryKey: ['doctors'],
-    queryFn: getDoctors,
+  // ── Doctor list for left panel (same query key → shared cache with AppointmentGrid) ──
+  const { data: allDoctors = [] } = useQuery({
+    queryKey: ['grid-doctors', activeBranchId ?? null],
+    queryFn: () => getDoctors(activeBranchId ? { branch_id: activeBranchId } : undefined),
   })
+  const activeDoctors = useMemo(() => allDoctors.filter((d) => d.is_active), [allDoctors])
 
+  // Visible doctor IDs: null = all, otherwise the checked set
+  const visibleDoctorIds = useMemo(() => {
+    if (checkedDoctorIds === null) return null
+    return checkedDoctorIds.length === 0 ? activeDoctors.map((d) => d.id) : checkedDoctorIds
+  }, [checkedDoctorIds, activeDoctors])
+
+  const toggleDoctor = (id) => {
+    setCheckedDoctorIds((prev) => {
+      const set = prev ?? activeDoctors.map((d) => d.id)
+      return set.includes(id) ? set.filter((x) => x !== id) : [...set, id]
+    })
+  }
+
+  const allChecked = checkedDoctorIds === null || checkedDoctorIds.length === activeDoctors.length
+  const toggleAll = () => setCheckedDoctorIds(allChecked ? [] : null)
+
+  // ── Services for create form ──
   const { data: createServices = [] } = useQuery({
     queryKey: ['services', createDoctorId],
     queryFn: () => getDoctorServices(Number(createDoctorId)),
@@ -488,15 +587,11 @@ export default function ScheduleGridPage() {
 
   // ── Handlers ──
   const handleSlotClick = (doctorId, startTime) => {
-    setCreateModal({
-      doctorId,
-      startAt: `${format(date, 'yyyy-MM-dd')}T${startTime}`,
-    })
+    setCreateModal({ doctorId, startAt: `${format(date, 'yyyy-MM-dd')}T${startTime}` })
     setCreateDoctorId(String(doctorId))
   }
 
   const handleEventClick = (appt) => setSelectedAppt(appt)
-
   const handleConfirmAppt = (appt) => setSimpleAction({ appt, action: 'confirm', title: 'Подтвердить запись', label: 'Подтвердить' })
   const handleCompleteAppt = (appt) => setSimpleAction({ appt, action: 'complete', title: 'Завершить запись', label: 'Завершить' })
   const handleNoShowAppt = (appt) => setSimpleAction({ appt, action: 'noShow', title: 'Отметить «Не пришёл»', label: 'Отметить' })
@@ -521,70 +616,139 @@ export default function ScheduleGridPage() {
   }
 
   const simpleActionPending = confirmMut.isPending || completeMut.isPending || noShowMut.isPending
-
   const dateLabel = format(date, 'EEEE, d MMMM yyyy', { locale: ru })
-  const today = isToday(date)
+  const viewingToday = isToday(date)
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex h-full bg-gray-50 overflow-hidden">
 
-      {/* ── Toolbar ── */}
-      <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-white border-b border-gray-200">
+      {/* ── Left panel ── */}
+      <aside className="w-52 shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
 
-        {/* Date navigation */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setDate((d) => subDays(d, 1))}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-          >
-            <ChevronLeft size={18} />
-          </button>
+        {/* Today button + date label */}
+        <div className="p-3 pb-2 border-b border-gray-100">
           <button
             onClick={() => setDate(new Date())}
-            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-              today
-                ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+            className={`w-full px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              viewingToday
+                ? 'bg-blue-600 text-white'
+                : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
             }`}
           >
             Сегодня
           </button>
+        </div>
+
+        {/* Mini calendar */}
+        <div className="pt-2">
+          <MiniCalendar selected={date} onChange={setDate} />
+        </div>
+
+        {/* Doctor filter */}
+        {activeDoctors.length > 0 && (
+          <div className="border-t border-gray-100 pt-3 flex-1">
+            <div className="px-3 mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                Сотрудники
+              </span>
+              <button
+                onClick={toggleAll}
+                className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
+              >
+                {allChecked ? 'Снять все' : 'Все'}
+              </button>
+            </div>
+            <div className="px-2 space-y-0.5">
+              {activeDoctors.map((d) => {
+                const checked =
+                  checkedDoctorIds === null || checkedDoctorIds.includes(d.id)
+                const name = [d.last_name, d.first_name].filter(Boolean).join(' ')
+                const initial = (d.last_name ?? d.first_name ?? '?')[0]
+                return (
+                  <label
+                    key={d.id}
+                    className="flex items-center gap-2 px-1 py-1 rounded-md cursor-pointer hover:bg-gray-50 select-none transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      className="rounded shrink-0 accent-blue-600"
+                      checked={checked}
+                      onChange={() => toggleDoctor(d.id)}
+                    />
+                    <div
+                      className={`w-5 h-5 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[9px] font-bold shrink-0`}
+                    >
+                      {initial}
+                    </div>
+                    <span className="text-xs text-gray-700 truncate">{name}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* ── Main area ── */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+
+        {/* Toolbar */}
+        <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-white border-b border-gray-200">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setDate((d) => subDays(d, 1))}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              onClick={() => setDate((d) => addDays(d, 1))}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+
+          <span className="text-sm font-medium text-gray-900 capitalize hidden sm:block">
+            {dateLabel}
+          </span>
+
+          {/* Filter indicator */}
+          {checkedDoctorIds !== null && checkedDoctorIds.length < activeDoctors.length && (
+            <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
+              {checkedDoctorIds.length} из {activeDoctors.length}
+            </span>
+          )}
+
+          <div className="flex-1" />
+
           <button
-            onClick={() => setDate((d) => addDays(d, 1))}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+            onClick={() => setCreateModal({ doctorId: null, startAt: null })}
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            <ChevronRight size={18} />
+            <Plus size={15} />
+            Новая запись
           </button>
         </div>
 
-        {/* Date label */}
-        <span className="text-sm font-medium text-gray-900 capitalize hidden sm:block">
-          {dateLabel}
-        </span>
+        {/* Grid */}
+        <AppointmentGrid
+          date={date}
+          branchId={activeBranchId ?? undefined}
+          onEventClick={handleEventClick}
+          onSlotClick={handleSlotClick}
+          visibleDoctorIds={visibleDoctorIds}
+        />
 
-        <div className="flex-1" />
-
-        {/* New appointment button */}
-        <button
-          onClick={() => setCreateModal({ doctorId: null, startAt: null })}
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <Plus size={15} />
-          Новая запись
-        </button>
+        {/* Waiting patients placeholder */}
+        <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-2 flex items-center gap-2">
+          <Users size={13} className="text-gray-400 shrink-0" />
+          <span className="text-xs text-gray-400">Ожидающие пациенты — появится в v0.3</span>
+        </div>
       </div>
-
-      {/* ── Grid ── */}
-      <AppointmentGrid
-        date={date}
-        branchId={activeBranchId ?? undefined}
-        onEventClick={handleEventClick}
-        onSlotClick={handleSlotClick}
-      />
 
       {/* ── Modals ── */}
 
-      {/* Event detail */}
       <EventDetailModal
         appt={selectedAppt}
         onClose={() => setSelectedAppt(null)}
@@ -594,7 +758,6 @@ export default function ScheduleGridPage() {
         onNoShow={handleNoShowAppt}
       />
 
-      {/* Create appointment */}
       <Modal
         isOpen={!!createModal}
         onClose={() => { setCreateModal(null); setCreateDoctorId('') }}
@@ -603,7 +766,7 @@ export default function ScheduleGridPage() {
       >
         {createModal && (
           <CreateForm
-            doctors={doctors.filter((d) => d.is_active)}
+            doctors={activeDoctors}
             services={createServices}
             onDoctorChange={setCreateDoctorId}
             onSubmit={handleCreateSubmit}
@@ -614,7 +777,6 @@ export default function ScheduleGridPage() {
         )}
       </Modal>
 
-      {/* Cancel */}
       <CancelModal
         target={cancelTarget}
         onClose={() => setCancelTarget(null)}
@@ -622,17 +784,12 @@ export default function ScheduleGridPage() {
         isLoading={cancelMut.isPending}
       />
 
-      {/* Confirm / Complete / No-show */}
       <ConfirmDialog
         isOpen={!!simpleAction}
         onClose={() => setSimpleAction(null)}
         onConfirm={handleSimpleConfirm}
         title={simpleAction?.title ?? ''}
-        message={
-          simpleAction
-            ? `Пациент: ${simpleAction.appt.patient_name}`
-            : ''
-        }
+        message={simpleAction ? `Пациент: ${simpleAction.appt.patient_name}` : ''}
         confirmLabel={simpleAction?.label ?? 'Подтвердить'}
         confirmVariant="primary"
         isLoading={simpleActionPending}

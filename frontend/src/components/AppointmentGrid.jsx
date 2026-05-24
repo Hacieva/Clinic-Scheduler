@@ -203,7 +203,7 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
 
 // ─── AppointmentGrid ──────────────────────────────────────────────────────────
 
-export default function AppointmentGrid({ date, branchId, onEventClick, onSlotClick }) {
+export default function AppointmentGrid({ date, branchId, onEventClick, onSlotClick, visibleDoctorIds }) {
   const dateStr = format(date, 'yyyy-MM-dd')
   const viewingToday = isToday(date)
 
@@ -221,7 +221,10 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
     queryFn: () => getDoctors(branchId ? { branch_id: branchId } : undefined),
   })
 
-  const doctors = allDoctors.filter((d) => d.is_active)
+  const activeDoctors = allDoctors.filter((d) => d.is_active)
+  const doctors = visibleDoctorIds
+    ? activeDoctors.filter((d) => visibleDoctorIds.includes(d.id))
+    : activeDoctors
 
   const { data: appointments = [], isLoading: loadingAp } = useQuery({
     queryKey: ['grid-appointments', dateStr, branchId ?? null],
