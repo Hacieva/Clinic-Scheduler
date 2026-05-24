@@ -2,18 +2,20 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Pencil, X } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { updateDoctor, setDoctorDirections } from '../../api/doctors'
+import { getBranches } from '../../api/branches'
 import Badge from '../../components/Badge'
 
 const schema = z.object({
   last_name: z.string().min(1, 'Введите фамилию'),
   first_name: z.string().min(1, 'Введите имя'),
   middle_name: z.string().optional(),
+  phone: z.string().optional(),
   cabinet: z.string().optional(),
-  branch_address: z.string().optional(),
+  branch_id: z.number().nullable().optional(),
   description: z.string().optional(),
   direction_ids: z.array(z.number()).default([]),
 })
@@ -23,13 +25,14 @@ function toPayload(data) {
     first_name: data.first_name,
     last_name: data.last_name,
     ...(data.middle_name && { middle_name: data.middle_name }),
+    ...(data.phone && { phone: data.phone }),
     ...(data.cabinet && { cabinet: data.cabinet }),
-    ...(data.branch_address && { branch_address: data.branch_address }),
+    ...(data.branch_id && { branch_id: data.branch_id }),
     ...(data.description && { description: data.description }),
   }
 }
 
-function EditForm({ doctor, allDirections, onCancel, onSaved }) {
+function EditForm({ doctor, allDirections, allBranches, onCancel, onSaved }) {
   const {
     register,
     handleSubmit,
@@ -42,8 +45,9 @@ function EditForm({ doctor, allDirections, onCancel, onSaved }) {
       last_name: doctor.last_name,
       first_name: doctor.first_name,
       middle_name: doctor.middle_name ?? '',
+      phone: doctor.phone ?? '',
       cabinet: doctor.cabinet ?? '',
-      branch_address: doctor.branch_address ?? '',
+      branch_id: doctor.branch_id ?? null,
       description: doctor.description ?? '',
       direction_ids: doctor.directions?.map((d) => d.id) ?? [],
     },
@@ -89,6 +93,7 @@ function EditForm({ doctor, allDirections, onCancel, onSaved }) {
           )}
         </div>
       </div>
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Отчество</label>
         <input
@@ -97,7 +102,17 @@ function EditForm({ doctor, allDirections, onCancel, onSaved }) {
           {...register('middle_name')}
         />
       </div>
+
       <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
+          <input
+            type="text"
+            placeholder="+7 999 000 00 00"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            {...register('phone')}
+          />
+        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Кабинет</label>
           <input
@@ -106,22 +121,24 @@ function EditForm({ doctor, allDirections, onCancel, onSaved }) {
             {...register('cabinet')}
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Адрес филиала
-          </label>
-          <input
-            type="text"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            {...register('branch_address')}
-          />
-        </div>
       </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Филиал</label>
+        <select
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {...register('branch_id', { valueAsNumber: true })}
+        >
+          <option value="">Не выбрано</option>
+          {allBranches.filter((b) => b.is_active).map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+      </div>
+
       {allDirections.filter((d) => d.is_active).length > 0 && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Направления
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Направления</label>
           <div className="space-y-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2">
             {allDirections
               .filter((d) => d.is_active)
@@ -142,6 +159,7 @@ function EditForm({ doctor, allDirections, onCancel, onSaved }) {
           </div>
         </div>
       )}
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
         <textarea
@@ -150,6 +168,7 @@ function EditForm({ doctor, allDirections, onCancel, onSaved }) {
           {...register('description')}
         />
       </div>
+
       <div className="flex gap-3">
         <button
           type="submit"
@@ -182,6 +201,13 @@ export default function DoctorInfoTab({ doctor, doctorId, allDirections }) {
   const [editing, setEditing] = useState(false)
   const qc = useQueryClient()
 
+  const { data: allBranches = [] } = useQuery({
+    queryKey: ['branches'],
+    queryFn: getBranches,
+  })
+
+  const branch = allBranches.find((b) => b.id === doctor.branch_id)
+
   const mut = useMutation({
     mutationFn: async ({ direction_ids, ...rest }) => {
       await updateDoctor(doctorId, toPayload(rest))
@@ -200,6 +226,7 @@ export default function DoctorInfoTab({ doctor, doctorId, allDirections }) {
       <EditForm
         doctor={doctor}
         allDirections={allDirections}
+        allBranches={allBranches}
         onCancel={() => setEditing(false)}
         onSaved={(data) => mut.mutate(data)}
       />
@@ -221,8 +248,9 @@ export default function DoctorInfoTab({ doctor, doctorId, allDirections }) {
         <InfoRow label="Фамилия" value={doctor.last_name} />
         <InfoRow label="Имя" value={doctor.first_name} />
         <InfoRow label="Отчество" value={doctor.middle_name} />
+        <InfoRow label="Телефон" value={doctor.phone} />
         <InfoRow label="Кабинет" value={doctor.cabinet} />
-        <InfoRow label="Адрес филиала" value={doctor.branch_address} />
+        <InfoRow label="Филиал" value={branch?.name} />
         <div>
           <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
             Направления
@@ -243,12 +271,8 @@ export default function DoctorInfoTab({ doctor, doctorId, allDirections }) {
         </div>
         {doctor.description && (
           <div>
-            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Описание
-            </dt>
-            <dd className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap">
-              {doctor.description}
-            </dd>
+            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Описание</dt>
+            <dd className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap">{doctor.description}</dd>
           </div>
         )}
       </dl>

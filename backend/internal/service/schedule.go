@@ -87,6 +87,21 @@ func (s *ScheduleService) DeleteException(ctx context.Context, id int64) error {
 	return s.repo.DeleteException(ctx, id)
 }
 
+// CreateExceptionRange creates exceptions for every date in [from, to] inclusive.
+// Only day_off and custom_working_hours types are accepted; range is capped at 365 days.
+func (s *ScheduleService) CreateExceptionRange(ctx context.Context, doctorID int64, from, to time.Time, exType model.ExceptionType) (int, error) {
+	if exType != model.ExceptionTypeDayOff && exType != model.ExceptionTypeCustomWorkingHours {
+		return 0, apperrors.ErrInvalidSchedule
+	}
+	if !from.Before(to.AddDate(0, 0, 1)) {
+		return 0, apperrors.ErrInvalidSchedule
+	}
+	if to.Sub(from).Hours() > 365*24 {
+		return 0, apperrors.ErrInvalidSchedule
+	}
+	return s.repo.CreateExceptionRange(ctx, doctorID, from, to, exType)
+}
+
 func validateWorkingHoursInput(inp WorkingHoursInput) error {
 	if inp.DayOfWeek < 1 || inp.DayOfWeek > 7 {
 		return apperrors.ErrInvalidSchedule

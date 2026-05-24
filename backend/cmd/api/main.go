@@ -203,6 +203,7 @@ func main() {
 
 				r.Put("/doctors/{id}/working-hours", scheduleHandler.ReplaceWorkingHours)
 				r.Post("/doctors/{id}/exceptions", scheduleHandler.CreateException)
+				r.Post("/doctors/{id}/exceptions/range", scheduleHandler.CreateExceptionRange)
 				r.Put("/doctors/{id}/exceptions/{exId}", scheduleHandler.UpdateException)
 				r.Delete("/doctors/{id}/exceptions/{exId}", scheduleHandler.DeleteException)
 

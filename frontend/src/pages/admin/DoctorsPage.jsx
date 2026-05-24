@@ -14,6 +14,7 @@ import {
   setDoctorDirections,
 } from '../../api/doctors'
 import { getDirections } from '../../api/directions'
+import { getBranches } from '../../api/branches'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 
@@ -21,24 +22,42 @@ const schema = z.object({
   last_name: z.string().min(1, 'Введите фамилию'),
   first_name: z.string().min(1, 'Введите имя'),
   middle_name: z.string().optional(),
+  phone: z.string().optional(),
   cabinet: z.string().optional(),
-  branch_address: z.string().optional(),
+  branch_id: z.number().nullable().optional(),
   description: z.string().optional(),
   direction_ids: z.array(z.number()).default([]),
+  create_account: z.boolean().default(false),
+  email: z.string().optional(),
+  password: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.create_account) {
+    if (!data.email || !z.string().email().safeParse(data.email).success) {
+      ctx.addIssue({ code: 'custom', path: ['email'], message: 'Введите корректный email' })
+    }
+    if (!data.password || data.password.length < 8) {
+      ctx.addIssue({ code: 'custom', path: ['password'], message: 'Минимум 8 символов' })
+    }
+  }
 })
 
 function toPayload(data) {
-  return {
+  const payload = {
     first_name: data.first_name,
     last_name: data.last_name,
     ...(data.middle_name && { middle_name: data.middle_name }),
+    ...(data.phone && { phone: data.phone }),
     ...(data.cabinet && { cabinet: data.cabinet }),
-    ...(data.branch_address && { branch_address: data.branch_address }),
+    ...(data.branch_id && { branch_id: data.branch_id }),
     ...(data.description && { description: data.description }),
   }
+  if (data.create_account && data.email && data.password) {
+    payload.account = { email: data.email, password: data.password }
+  }
+  return payload
 }
 
-function DoctorForm({ defaultValues, allDirections, onSubmit, isLoading }) {
+function DoctorForm({ defaultValues, allDirections, allBranches, onSubmit, isLoading, isEdit }) {
   const {
     register,
     handleSubmit,
@@ -47,18 +66,15 @@ function DoctorForm({ defaultValues, allDirections, onSubmit, isLoading }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: defaultValues ?? { direction_ids: [] },
+    defaultValues: defaultValues ?? { direction_ids: [], create_account: false },
   })
 
   const selectedIds = watch('direction_ids') ?? []
+  const createAccount = watch('create_account')
 
   const toggleDirection = (id) => {
     if (selectedIds.includes(id)) {
-      setValue(
-        'direction_ids',
-        selectedIds.filter((d) => d !== id),
-        { shouldValidate: true },
-      )
+      setValue('direction_ids', selectedIds.filter((d) => d !== id), { shouldValidate: true })
     } else {
       setValue('direction_ids', [...selectedIds, id], { shouldValidate: true })
     }
@@ -68,6 +84,7 @@ function DoctorForm({ defaultValues, allDirections, onSubmit, isLoading }) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* Name */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -106,7 +123,17 @@ function DoctorForm({ defaultValues, allDirections, onSubmit, isLoading }) {
         />
       </div>
 
+      {/* Phone + cabinet */}
       <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
+          <input
+            type="text"
+            placeholder="+7 999 000 00 00"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            {...register('phone')}
+          />
+        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Кабинет</label>
           <input
@@ -115,23 +142,26 @@ function DoctorForm({ defaultValues, allDirections, onSubmit, isLoading }) {
             {...register('cabinet')}
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Адрес филиала
-          </label>
-          <input
-            type="text"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            {...register('branch_address')}
-          />
-        </div>
       </div>
 
+      {/* Branch */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Филиал</label>
+        <select
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {...register('branch_id', { valueAsNumber: true })}
+        >
+          <option value="">Не выбрано</option>
+          {allBranches.filter((b) => b.is_active).map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Directions */}
       {activeDirections.length > 0 && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Направления
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Направления</label>
           <div className="space-y-1 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2">
             {activeDirections.map((d) => (
               <label
@@ -151,14 +181,60 @@ function DoctorForm({ defaultValues, allDirections, onSubmit, isLoading }) {
         </div>
       )}
 
+      {/* Description */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
         <textarea
-          rows={3}
+          rows={2}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           {...register('description')}
         />
       </div>
+
+      {/* Account section — only on create */}
+      {!isEdit && (
+        <div className="border-t border-gray-100 pt-4">
+          <label className="flex items-center gap-2 cursor-pointer mb-3">
+            <input
+              type="checkbox"
+              className="rounded"
+              {...register('create_account')}
+            />
+            <span className="text-sm font-medium text-gray-700">Создать аккаунт сейчас</span>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                autoComplete="off"
+                disabled={!createAccount}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+                {...register('email')}
+              />
+              {errors.email && (
+                <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                disabled={!createAccount}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+                {...register('password')}
+              />
+              {errors.password && (
+                <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
+              )}
+            </div>
+          </div>
+          {createAccount && (
+            <p className="mt-1.5 text-xs text-gray-500">Пароль будет показан на странице врача. Минимум 8 символов.</p>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-end pt-2">
         <button
@@ -183,10 +259,11 @@ const AVATAR_COLORS = [
 ]
 function avatarBg(id) { return AVATAR_COLORS[id % AVATAR_COLORS.length] }
 
-function DoctorCard({ doctor, onEdit, onDelete, onNavigate }) {
+function DoctorCard({ doctor, allBranches, onEdit, onDelete, onNavigate }) {
   const name = fullName(doctor)
   const initial = (doctor.last_name ?? doctor.first_name ?? '?')[0]
   const dirs = doctor.directions ?? []
+  const branch = allBranches.find((b) => b.id === doctor.branch_id)
   return (
     <div className={`bg-white rounded-xl border border-gray-200 p-4 flex flex-col gap-3 ${!doctor.is_active ? 'opacity-60' : ''}`}>
       <div className="flex items-start gap-3">
@@ -197,6 +274,7 @@ function DoctorCard({ doctor, onEdit, onDelete, onNavigate }) {
           <p className="font-semibold text-gray-900 text-sm leading-tight truncate">{name}</p>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {doctor.cabinet && <span className="text-xs text-gray-400">Каб. {doctor.cabinet}</span>}
+            {branch && <span className="text-xs text-gray-400">{branch.name}</span>}
             {!doctor.is_active && <span className="text-xs text-rose-500 font-medium">Неактивен</span>}
           </div>
         </div>
@@ -258,25 +336,41 @@ export default function DoctorsPage() {
     queryFn: getDirections,
   })
 
+  const { data: allBranches = [] } = useQuery({
+    queryKey: ['branches'],
+    queryFn: getBranches,
+  })
+
   const createMut = useMutation({
-    mutationFn: async ({ direction_ids, ...rest }) => {
-      const doctor = await createDoctor(toPayload(rest))
+    mutationFn: async ({ direction_ids, create_account, email, password, ...rest }) => {
+      const payload = toPayload({ direction_ids, create_account, email, password, ...rest })
+      const doctor = await createDoctor(payload)
       if (direction_ids?.length > 0) {
         await setDoctorDirections(doctor.id, direction_ids)
       }
       return doctor
     },
-    onSuccess: () => {
+    onSuccess: (doctor) => {
       qc.invalidateQueries({ queryKey: ['doctors'] })
       setCreateOpen(false)
       toast.success('Врач создан')
+      navigate(`/admin/doctors/${doctor.id}`)
     },
-    onError: () => toast.error('Не удалось создать врача'),
+    onError: (err) => {
+      const status = err?.response?.status
+      if (status === 409) {
+        toast.error('Email уже занят')
+      } else if (status === 422) {
+        toast.error('Пароль слишком слабый')
+      } else {
+        toast.error('Не удалось создать врача')
+      }
+    },
   })
 
   const updateMut = useMutation({
-    mutationFn: async ({ id, direction_ids, ...rest }) => {
-      await updateDoctor(id, toPayload(rest))
+    mutationFn: async ({ id, direction_ids, create_account, email, password, ...rest }) => {
+      await updateDoctor(id, toPayload({ direction_ids, create_account: false, email, password, ...rest }))
       await setDoctorDirections(id, direction_ids ?? [])
     },
     onSuccess: () => {
@@ -302,8 +396,9 @@ export default function DoctorsPage() {
         last_name: editTarget.last_name,
         first_name: editTarget.first_name,
         middle_name: editTarget.middle_name ?? '',
+        phone: editTarget.phone ?? '',
         cabinet: editTarget.cabinet ?? '',
-        branch_address: editTarget.branch_address ?? '',
+        branch_id: editTarget.branch_id ?? null,
         description: editTarget.description ?? '',
         direction_ids: editTarget.directions?.map((d) => d.id) ?? [],
       }
@@ -351,6 +446,7 @@ export default function DoctorsPage() {
             <DoctorCard
               key={d.id}
               doctor={d}
+              allBranches={allBranches}
               onNavigate={(id) => navigate(`/admin/doctors/${id}`)}
               onEdit={setEditTarget}
               onDelete={setDeleteTarget}
@@ -367,8 +463,10 @@ export default function DoctorsPage() {
       >
         <DoctorForm
           allDirections={allDirections}
+          allBranches={allBranches}
           onSubmit={(data) => createMut.mutate(data)}
           isLoading={createMut.isPending}
+          isEdit={false}
         />
       </Modal>
 
@@ -382,8 +480,10 @@ export default function DoctorsPage() {
           <DoctorForm
             defaultValues={editDefaultValues}
             allDirections={allDirections}
+            allBranches={allBranches}
             onSubmit={(data) => updateMut.mutate({ id: editTarget.id, ...data })}
             isLoading={updateMut.isPending}
+            isEdit={true}
           />
         )}
       </Modal>

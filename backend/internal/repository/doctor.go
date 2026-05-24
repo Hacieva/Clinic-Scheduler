@@ -18,6 +18,7 @@ type DoctorRepository interface {
 	GetByID(ctx context.Context, id int64) (*model.DoctorWithDirections, error)
 	GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error)
 	Create(ctx context.Context, input CreateDoctorInput) (*model.Doctor, error)
+	CreateWithAccount(ctx context.Context, input CreateDoctorInput, email, passwordHash string) (*model.Doctor, error)
 	Update(ctx context.Context, id int64, input UpdateDoctorInput) (*model.Doctor, error)
 	SoftDelete(ctx context.Context, id int64) error
 	CreateAccount(ctx context.Context, doctorID int64, email, passwordHash string) (*model.Doctor, error)
@@ -25,13 +26,14 @@ type DoctorRepository interface {
 }
 
 type CreateDoctorInput struct {
-	FirstName     string
-	LastName      string
-	MiddleName    *string
-	Cabinet       *string
-	BranchAddress *string
-	Description   *string
-	PhotoURL      *string
+	FirstName   string
+	LastName    string
+	MiddleName  *string
+	Cabinet     *string
+	BranchID    *int64
+	Phone       *string
+	Description *string
+	PhotoURL    *string
 }
 
 type UpdateDoctorInput = CreateDoctorInput
@@ -55,7 +57,7 @@ func NewDoctorRepo(db *pgxpool.Pool) *DoctorRepo {
 func (r *DoctorRepo) List(ctx context.Context, filter DoctorFilter) ([]model.DoctorWithDirections, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.user_id, d.first_name, d.last_name, d.middle_name,
-		       d.cabinet, d.branch_address, d.description, d.photo_url,
+		       d.cabinet, d.branch_id, d.phone, d.description, d.photo_url,
 		       d.is_active, d.created_at, d.updated_at,
 		       dir.id, dir.name, dir.description, dir.is_active, dir.created_at, dir.updated_at
 		FROM   doctors d
@@ -77,7 +79,7 @@ func (r *DoctorRepo) List(ctx context.Context, filter DoctorFilter) ([]model.Doc
 func (r *DoctorRepo) GetByID(ctx context.Context, id int64) (*model.DoctorWithDirections, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.user_id, d.first_name, d.last_name, d.middle_name,
-		       d.cabinet, d.branch_address, d.description, d.photo_url,
+		       d.cabinet, d.branch_id, d.phone, d.description, d.photo_url,
 		       d.is_active, d.created_at, d.updated_at,
 		       dir.id, dir.name, dir.description, dir.is_active, dir.created_at, dir.updated_at
 		FROM   doctors d
@@ -103,17 +105,60 @@ func (r *DoctorRepo) GetByID(ctx context.Context, id int64) (*model.DoctorWithDi
 func (r *DoctorRepo) Create(ctx context.Context, input CreateDoctorInput) (*model.Doctor, error) {
 	d := &model.Doctor{}
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO doctors (first_name, last_name, middle_name, cabinet, branch_address, description, photo_url)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO doctors (first_name, last_name, middle_name, cabinet, branch_id, phone, description, photo_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, user_id, first_name, last_name, middle_name,
-		          cabinet, branch_address, description, photo_url,
+		          cabinet, branch_id, phone, description, photo_url,
 		          is_active, created_at, updated_at`,
 		input.FirstName, input.LastName, input.MiddleName,
-		input.Cabinet, input.BranchAddress, input.Description, input.PhotoURL).
+		input.Cabinet, input.BranchID, input.Phone, input.Description, input.PhotoURL).
 		Scan(&d.ID, &d.UserID, &d.FirstName, &d.LastName, &d.MiddleName,
-			&d.Cabinet, &d.BranchAddress, &d.Description, &d.PhotoURL,
+			&d.Cabinet, &d.BranchID, &d.Phone, &d.Description, &d.PhotoURL,
 			&d.IsActive, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// CreateWithAccount atomically creates a user account and a doctor linked to it.
+func (r *DoctorRepo) CreateWithAccount(ctx context.Context, input CreateDoctorInput, email, passwordHash string) (*model.Doctor, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var newUserID int64
+	err = tx.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash, role, is_active)
+		VALUES ($1, $2, 'doctor', true)
+		RETURNING id`, email, passwordHash).Scan(&newUserID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, apperrors.ErrConflict
+		}
+		return nil, err
+	}
+
+	d := &model.Doctor{}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO doctors (user_id, first_name, last_name, middle_name, cabinet, branch_id, phone, description, photo_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, user_id, first_name, last_name, middle_name,
+		          cabinet, branch_id, phone, description, photo_url,
+		          is_active, created_at, updated_at`,
+		newUserID, input.FirstName, input.LastName, input.MiddleName,
+		input.Cabinet, input.BranchID, input.Phone, input.Description, input.PhotoURL).
+		Scan(&d.ID, &d.UserID, &d.FirstName, &d.LastName, &d.MiddleName,
+			&d.Cabinet, &d.BranchID, &d.Phone, &d.Description, &d.PhotoURL,
+			&d.IsActive, &d.CreatedAt, &d.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -124,16 +169,16 @@ func (r *DoctorRepo) Update(ctx context.Context, id int64, input UpdateDoctorInp
 	err := r.db.QueryRow(ctx, `
 		UPDATE doctors
 		SET    first_name = $1, last_name = $2, middle_name = $3,
-		       cabinet = $4, branch_address = $5, description = $6,
-		       photo_url = $7, updated_at = NOW()
-		WHERE  id = $8
+		       cabinet = $4, branch_id = $5, phone = $6, description = $7,
+		       photo_url = $8, updated_at = NOW()
+		WHERE  id = $9
 		RETURNING id, user_id, first_name, last_name, middle_name,
-		          cabinet, branch_address, description, photo_url,
+		          cabinet, branch_id, phone, description, photo_url,
 		          is_active, created_at, updated_at`,
 		input.FirstName, input.LastName, input.MiddleName,
-		input.Cabinet, input.BranchAddress, input.Description, input.PhotoURL, id).
+		input.Cabinet, input.BranchID, input.Phone, input.Description, input.PhotoURL, id).
 		Scan(&d.ID, &d.UserID, &d.FirstName, &d.LastName, &d.MiddleName,
-			&d.Cabinet, &d.BranchAddress, &d.Description, &d.PhotoURL,
+			&d.Cabinet, &d.BranchID, &d.Phone, &d.Description, &d.PhotoURL,
 			&d.IsActive, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -201,11 +246,11 @@ func (r *DoctorRepo) CreateAccount(ctx context.Context, doctorID int64, email, p
 		UPDATE doctors SET user_id = $1, updated_at = NOW()
 		WHERE  id = $2
 		RETURNING id, user_id, first_name, last_name, middle_name,
-		          cabinet, branch_address, description, photo_url,
+		          cabinet, branch_id, phone, description, photo_url,
 		          is_active, created_at, updated_at`,
 		newUserID, doctorID).
 		Scan(&d.ID, &d.UserID, &d.FirstName, &d.LastName, &d.MiddleName,
-			&d.Cabinet, &d.BranchAddress, &d.Description, &d.PhotoURL,
+			&d.Cabinet, &d.BranchID, &d.Phone, &d.Description, &d.PhotoURL,
 			&d.IsActive, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -272,7 +317,7 @@ func scanDoctorsWithDirections(rows pgx.Rows) ([]model.DoctorWithDirections, err
 
 		if err := rows.Scan(
 			&doc.ID, &doc.UserID, &doc.FirstName, &doc.LastName, &doc.MiddleName,
-			&doc.Cabinet, &doc.BranchAddress, &doc.Description, &doc.PhotoURL,
+			&doc.Cabinet, &doc.BranchID, &doc.Phone, &doc.Description, &doc.PhotoURL,
 			&doc.IsActive, &doc.CreatedAt, &doc.UpdatedAt,
 			&dirID, &dirName, &dirDesc, &dirIsActive, &dirCreatedAt, &dirUpdatedAt,
 		); err != nil {

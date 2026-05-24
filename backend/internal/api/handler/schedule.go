@@ -204,6 +204,49 @@ func (h *ScheduleHandler) DeleteException(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *ScheduleHandler) CreateExceptionRange(w http.ResponseWriter, r *http.Request) {
+	doctorID, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		From string `json:"from"` // "YYYY-MM-DD"
+		To   string `json:"to"`   // "YYYY-MM-DD"
+		Type string `json:"type"` // "day_off"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.From == "" || req.To == "" || req.Type == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "from, to, and type are required"})
+		return
+	}
+
+	from, err := time.Parse("2006-01-02", req.From)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid from date, expected YYYY-MM-DD"})
+		return
+	}
+	to, err := time.Parse("2006-01-02", req.To)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid to date, expected YYYY-MM-DD"})
+		return
+	}
+
+	count, err := h.svc.CreateExceptionRange(r.Context(), doctorID, from, to, model.ExceptionType(req.Type))
+	if err != nil {
+		if errors.Is(err, apperrors.ErrInvalidSchedule) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid range or type"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]int{"created": count})
+}
+
 // — Helpers —
 
 func parseExIDParam(w http.ResponseWriter, r *http.Request) (int64, bool) {

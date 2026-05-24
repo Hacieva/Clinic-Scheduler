@@ -58,6 +58,16 @@ func (m *mockDoctorRepo) CreateAccount(_ context.Context, _ int64, _ string, _ s
 	return m.doctorRow, m.err
 }
 
+func (m *mockDoctorRepo) CreateWithAccount(_ context.Context, input repository.CreateDoctorInput, _ string, _ string) (*model.Doctor, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &model.Doctor{
+		ID: 1, FirstName: input.FirstName, LastName: input.LastName,
+		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}, nil
+}
+
 func (m *mockDoctorRepo) SetDirections(_ context.Context, _ int64, _ []int64) error {
 	return m.err
 }

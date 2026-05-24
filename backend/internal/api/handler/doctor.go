@@ -8,6 +8,7 @@ import (
 
 	apperrors "github.com/Hacieva/clinic-scheduler/backend/internal/errors"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/auth"
+	"github.com/Hacieva/clinic-scheduler/backend/internal/model"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/repository"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/service"
 )
@@ -21,13 +22,18 @@ func NewDoctorHandler(svc *service.DoctorService) *DoctorHandler {
 }
 
 type doctorRequest struct {
-	FirstName     string  `json:"first_name"`
-	LastName      string  `json:"last_name"`
-	MiddleName    *string `json:"middle_name"`
-	Cabinet       *string `json:"cabinet"`
-	BranchAddress *string `json:"branch_address"`
-	Description   *string `json:"description"`
-	PhotoURL      *string `json:"photo_url"`
+	FirstName   string  `json:"first_name"`
+	LastName    string  `json:"last_name"`
+	MiddleName  *string `json:"middle_name"`
+	Cabinet     *string `json:"cabinet"`
+	BranchID    *int64  `json:"branch_id"`
+	Phone       *string `json:"phone"`
+	Description *string `json:"description"`
+	PhotoURL    *string `json:"photo_url"`
+	Account     *struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	} `json:"account"`
 }
 
 type createAccountRequest struct {
@@ -95,17 +101,36 @@ func (h *DoctorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "first_name and last_name are required"})
 		return
 	}
-	doc, err := h.svc.Create(r.Context(), service.DoctorInput{
-		FirstName:     req.FirstName,
-		LastName:      req.LastName,
-		MiddleName:    req.MiddleName,
-		Cabinet:       req.Cabinet,
-		BranchAddress: req.BranchAddress,
-		Description:   req.Description,
-		PhotoURL:      req.PhotoURL,
-	})
+
+	input := service.DoctorInput{
+		FirstName:   req.FirstName,
+		LastName:    req.LastName,
+		MiddleName:  req.MiddleName,
+		Cabinet:     req.Cabinet,
+		BranchID:    req.BranchID,
+		Phone:       req.Phone,
+		Description: req.Description,
+		PhotoURL:    req.PhotoURL,
+	}
+
+	var (
+		doc *model.Doctor
+		err error
+	)
+	if req.Account != nil && req.Account.Email != "" && req.Account.Password != "" {
+		doc, err = h.svc.CreateWithAccount(r.Context(), input, req.Account.Email, req.Account.Password)
+	} else {
+		doc, err = h.svc.Create(r.Context(), input)
+	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		switch {
+		case errors.Is(err, apperrors.ErrConflict):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "email already taken"})
+		case errors.Is(err, auth.ErrWeakPassword):
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
 		return
 	}
 	writeJSON(w, http.StatusCreated, doc)
@@ -126,13 +151,14 @@ func (h *DoctorHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, err := h.svc.Update(r.Context(), id, service.DoctorInput{
-		FirstName:     req.FirstName,
-		LastName:      req.LastName,
-		MiddleName:    req.MiddleName,
-		Cabinet:       req.Cabinet,
-		BranchAddress: req.BranchAddress,
-		Description:   req.Description,
-		PhotoURL:      req.PhotoURL,
+		FirstName:   req.FirstName,
+		LastName:    req.LastName,
+		MiddleName:  req.MiddleName,
+		Cabinet:     req.Cabinet,
+		BranchID:    req.BranchID,
+		Phone:       req.Phone,
+		Description: req.Description,
+		PhotoURL:    req.PhotoURL,
 	})
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {

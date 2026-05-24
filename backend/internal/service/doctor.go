@@ -19,13 +19,14 @@ func NewDoctorService(repo repository.DoctorRepository, dirRepo repository.Direc
 
 // DoctorInput carries fields for creating or updating a doctor profile.
 type DoctorInput struct {
-	FirstName     string
-	LastName      string
-	MiddleName    *string
-	Cabinet       *string
-	BranchAddress *string
-	Description   *string
-	PhotoURL      *string
+	FirstName   string
+	LastName    string
+	MiddleName  *string
+	Cabinet     *string
+	BranchID    *int64
+	Phone       *string
+	Description *string
+	PhotoURL    *string
 }
 
 func (s *DoctorService) List(ctx context.Context, filter repository.DoctorFilter) ([]model.DoctorWithDirections, error) {
@@ -38,25 +39,48 @@ func (s *DoctorService) GetByID(ctx context.Context, id int64) (*model.DoctorWit
 
 func (s *DoctorService) Create(ctx context.Context, input DoctorInput) (*model.Doctor, error) {
 	return s.repo.Create(ctx, repository.CreateDoctorInput{
-		FirstName:     input.FirstName,
-		LastName:      input.LastName,
-		MiddleName:    input.MiddleName,
-		Cabinet:       input.Cabinet,
-		BranchAddress: input.BranchAddress,
-		Description:   input.Description,
-		PhotoURL:      input.PhotoURL,
+		FirstName:   input.FirstName,
+		LastName:    input.LastName,
+		MiddleName:  input.MiddleName,
+		Cabinet:     input.Cabinet,
+		BranchID:    input.BranchID,
+		Phone:       input.Phone,
+		Description: input.Description,
+		PhotoURL:    input.PhotoURL,
 	})
+}
+
+// CreateWithAccount atomically creates the doctor profile and a linked user account.
+func (s *DoctorService) CreateWithAccount(ctx context.Context, input DoctorInput, email, password string) (*model.Doctor, error) {
+	if err := auth.ValidatePasswordStrength(password); err != nil {
+		return nil, err
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.CreateWithAccount(ctx, repository.CreateDoctorInput{
+		FirstName:   input.FirstName,
+		LastName:    input.LastName,
+		MiddleName:  input.MiddleName,
+		Cabinet:     input.Cabinet,
+		BranchID:    input.BranchID,
+		Phone:       input.Phone,
+		Description: input.Description,
+		PhotoURL:    input.PhotoURL,
+	}, email, hash)
 }
 
 func (s *DoctorService) Update(ctx context.Context, id int64, input DoctorInput) (*model.Doctor, error) {
 	return s.repo.Update(ctx, id, repository.UpdateDoctorInput{
-		FirstName:     input.FirstName,
-		LastName:      input.LastName,
-		MiddleName:    input.MiddleName,
-		Cabinet:       input.Cabinet,
-		BranchAddress: input.BranchAddress,
-		Description:   input.Description,
-		PhotoURL:      input.PhotoURL,
+		FirstName:   input.FirstName,
+		LastName:    input.LastName,
+		MiddleName:  input.MiddleName,
+		Cabinet:     input.Cabinet,
+		BranchID:    input.BranchID,
+		Phone:       input.Phone,
+		Description: input.Description,
+		PhotoURL:    input.PhotoURL,
 	})
 }
 

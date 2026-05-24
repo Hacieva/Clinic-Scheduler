@@ -21,6 +21,7 @@ type ScheduleRepository interface {
 	ReplaceWorkingHours(ctx context.Context, doctorID int64, inputs []CreateWorkingHoursInput) error
 	ListExceptions(ctx context.Context, doctorID int64, from, to time.Time) ([]model.ScheduleException, error)
 	CreateException(ctx context.Context, input CreateExceptionInput) (*model.ScheduleException, error)
+	CreateExceptionRange(ctx context.Context, doctorID int64, from, to time.Time, exType model.ExceptionType) (int, error)
 	UpdateException(ctx context.Context, id int64, input CreateExceptionInput) (*model.ScheduleException, error)
 	DeleteException(ctx context.Context, id int64) error
 }
@@ -178,6 +179,36 @@ func (r *ScheduleRepo) DeleteException(ctx context.Context, id int64) error {
 		return apperrors.ErrNotFound
 	}
 	return nil
+}
+
+// CreateExceptionRange creates day_off (or other type) exceptions for every
+// date in [from, to] inclusive, inside a single transaction.
+// Dates that already have an exception are silently skipped (ON CONFLICT DO NOTHING).
+// Returns the number of newly created rows.
+func (r *ScheduleRepo) CreateExceptionRange(ctx context.Context, doctorID int64, from, to time.Time, exType model.ExceptionType) (int, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	created := 0
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO doctor_schedule_exceptions (doctor_id, date, type)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (doctor_id, date) DO NOTHING`,
+			doctorID, d, exType)
+		if err != nil {
+			return 0, err
+		}
+		created += int(tag.RowsAffected())
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return created, nil
 }
 
 // GetWorkingHours satisfies availability.ScheduleRepository.

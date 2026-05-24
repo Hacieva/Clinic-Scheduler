@@ -46,6 +46,10 @@ func (m *mockScheduleRepo) DeleteException(_ context.Context, _ int64) error {
 	return m.err
 }
 
+func (m *mockScheduleRepo) CreateExceptionRange(_ context.Context, _ int64, _, _ time.Time, _ model.ExceptionType) (int, error) {
+	return 0, m.err
+}
+
 // helpers
 
 func todayTime(h, m int) time.Time {

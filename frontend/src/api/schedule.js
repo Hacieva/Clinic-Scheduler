@@ -19,3 +19,6 @@ export const updateException = (doctorId, exId, data) =>
 
 export const deleteException = (doctorId, exId) =>
   client.delete(`/doctors/${doctorId}/exceptions/${exId}`)
+
+export const createExceptionRange = (doctorId, data) =>
+  client.post(`/doctors/${doctorId}/exceptions/range`, data).then((r) => r.data)
