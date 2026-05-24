@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { Stethoscope } from 'lucide-react'
 import { login } from '../api/auth'
 import useAuthStore from '../stores/auth'
+import { clinic } from '../lib/clinic.config'
 
 const schema = z.object({
   email: z.string().email('Введите корректный email'),
@@ -53,8 +54,8 @@ export default function LoginPage() {
           <div className="flex items-center justify-center w-12 h-12 bg-blue-600 rounded-2xl mb-4 shadow-md">
             <Stethoscope size={24} className="text-white" />
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900">Clinic Scheduler</h1>
-          <p className="text-sm text-gray-500 mt-1">Панель управления</p>
+          <h1 className="text-2xl font-semibold text-gray-900">{clinic.name}</h1>
+          <p className="text-sm text-gray-500 mt-1">{clinic.tagline}</p>
         </div>
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-6">Вход в систему</h2>

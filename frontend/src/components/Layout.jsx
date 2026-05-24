@@ -9,6 +9,7 @@ import useAuthStore from '../stores/auth'
 import useBranchStore from '../stores/branch'
 import { logout } from '../api/auth'
 import { getBranches } from '../api/branches'
+import { clinic } from '../lib/clinic.config'
 
 // ─── Nav definitions ──────────────────────────────────────────────────────────
 
@@ -19,14 +20,15 @@ const MAIN_NAV = [
   { to: '/admin/patients',      label: 'Пациенты',      icon: UserRound },
   { to: '/admin/doctors',       label: 'Врачи',         icon: Users },
   { to: '/admin/cashbox',       label: 'Касса',         icon: CreditCard },
-  { to: '/admin/directions',    label: 'Направления',   icon: BookOpen },
 ]
 
 const SETTINGS_NAV = [
+  { to: '/admin/settings/clinic',       label: 'Клиника',       icon: Stethoscope },
   { to: '/admin/settings/branches',     label: 'Филиалы',       icon: Building2 },
   { to: '/admin/settings/users',        label: 'Пользователи',  icon: UserCog },
-  { to: '/admin/settings/integrations', label: 'Интеграции',    icon: Plug2 },
+  { to: '/admin/settings/directions',   label: 'Направления',   icon: BookOpen },
   { to: '/admin/settings/prices',       label: 'Прайсы',        icon: Tag },
+  { to: '/admin/settings/integrations', label: 'Интеграции',    icon: Plug2 },
   { to: '/admin/settings/lab',          label: 'Лаборатория',   icon: FlaskConical },
 ]
 
@@ -104,7 +106,7 @@ export default function Layout() {
             <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg shrink-0">
               <Stethoscope size={16} className="text-white" />
             </div>
-            <h1 className="text-base font-semibold text-gray-900 leading-tight">Clinic Scheduler</h1>
+            <h1 className="text-base font-semibold text-gray-900 leading-tight">{clinic.name}</h1>
           </div>
           <p className="text-xs text-gray-400 truncate">{user?.email}</p>
 

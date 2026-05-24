@@ -15,6 +15,7 @@ import UsersPage from './pages/admin/settings/UsersPage'
 import IntegrationsPage from './pages/admin/settings/IntegrationsPage'
 import PricesPage from './pages/admin/settings/PricesPage'
 import LabPage from './pages/admin/settings/LabPage'
+import ClinicPage from './pages/admin/settings/ClinicPage'
 import DashboardPage from './pages/admin/DashboardPage'
 import CashboxPage from './pages/admin/cashbox/CashboxPage'
 import WalkInPage from './pages/admin/cashbox/WalkInPage'
@@ -36,19 +37,22 @@ export default function App() {
             <Route path="/admin/patients/:id" element={<PatientDetailPage />} />
             <Route path="/admin/doctors" element={<DoctorsPage />} />
             <Route path="/admin/doctors/:id" element={<DoctorDetailPage />} />
-            <Route path="/admin/directions" element={<DirectionsPage />} />
+            {/* /admin/directions → moved to settings; redirect old bookmarks */}
+            <Route path="/admin/directions" element={<Navigate to="/admin/settings/directions" replace />} />
 
             {/* Cashbox */}
             <Route path="/admin/cashbox" element={<CashboxPage />} />
             <Route path="/admin/cashbox/walk-in" element={<WalkInPage />} />
 
             {/* Settings */}
+            <Route path="/admin/settings/clinic" element={<ClinicPage />} />
             <Route path="/admin/settings/branches" element={<BranchesPage />} />
             <Route path="/admin/settings/users" element={<UsersPage />} />
+            <Route path="/admin/settings/directions" element={<DirectionsPage />} />
             <Route path="/admin/settings/integrations" element={<IntegrationsPage />} />
             <Route path="/admin/settings/prices" element={<PricesPage />} />
             <Route path="/admin/settings/lab" element={<LabPage />} />
-            <Route path="/admin/settings" element={<Navigate to="/admin/settings/branches" replace />} />
+            <Route path="/admin/settings" element={<Navigate to="/admin/settings/clinic" replace />} />
 
             {/* Default admin redirect */}
             <Route path="/admin" element={<Navigate to="/admin/schedule-grid" replace />} />
