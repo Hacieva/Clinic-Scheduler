@@ -59,7 +59,8 @@ func (h *ServiceHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
-	if svc.DoctorID != doctorID {
+	// TODO: legacy IDOR check via doctor_id column; remove after bot migrates to doctor_services.
+	if svc.DoctorID != nil && *svc.DoctorID != doctorID {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "service not found"})
 		return
 	}

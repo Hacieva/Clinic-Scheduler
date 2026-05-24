@@ -12,7 +12,10 @@ import (
 )
 
 type ServiceRepository interface {
+	// TODO: legacy — queries by services.doctor_id column; used only by bot endpoint.
+	// Remove after bot migrates to GET /bot/doctors/{id}/assigned-services.
 	ListByDoctor(ctx context.Context, doctorID int64) ([]model.Service, error)
+	ListAll(ctx context.Context, activeOnly bool) ([]model.Service, error)
 	GetByID(ctx context.Context, id int64) (*model.Service, error)
 	Create(ctx context.Context, input CreateServiceInput) (*model.Service, error)
 	Update(ctx context.Context, id int64, input UpdateServiceInput) (*model.Service, error)
@@ -21,8 +24,10 @@ type ServiceRepository interface {
 }
 
 type CreateServiceInput struct {
-	DoctorID        int64
+	// TODO: legacy — nil for global-catalog services; kept for bot backward compat.
+	DoctorID        *int64
 	DirectionID     int64
+	Category        *string
 	Name            string
 	Description     *string
 	DurationMinutes int
@@ -31,6 +36,7 @@ type CreateServiceInput struct {
 
 type UpdateServiceInput struct {
 	DirectionID     int64
+	Category        *string
 	Name            string
 	Description     *string
 	DurationMinutes int
@@ -45,10 +51,26 @@ func NewServiceRepo(db *pgxpool.Pool) *ServiceRepo {
 	return &ServiceRepo{db: db}
 }
 
+// scanService scans a full services row into a Service struct.
+func scanService(row interface {
+	Scan(dest ...any) error
+}) (model.Service, error) {
+	var s model.Service
+	err := row.Scan(
+		&s.ID, &s.DoctorID, &s.DirectionID, &s.Category, &s.Name, &s.Description,
+		&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
+	)
+	return s, err
+}
+
+const serviceColumns = `id, doctor_id, direction_id, category, name, description,
+	       duration_minutes, price, is_active, created_at, updated_at`
+
+// ListByDoctor queries by the legacy doctor_id column.
+// TODO: remove after bot migrates to doctor_services junction.
 func (r *ServiceRepo) ListByDoctor(ctx context.Context, doctorID int64) ([]model.Service, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, doctor_id, direction_id, name, description,
-		       duration_minutes, price, is_active, created_at, updated_at
+		SELECT `+serviceColumns+`
 		FROM   services
 		WHERE  doctor_id = $1
 		ORDER  BY id`, doctorID)
@@ -59,11 +81,38 @@ func (r *ServiceRepo) ListByDoctor(ctx context.Context, doctorID int64) ([]model
 
 	var result []model.Service
 	for rows.Next() {
-		var s model.Service
-		if err := rows.Scan(
-			&s.ID, &s.DoctorID, &s.DirectionID, &s.Name, &s.Description,
-			&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
-		); err != nil {
+		s, err := scanService(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = []model.Service{}
+	}
+	return result, nil
+}
+
+func (r *ServiceRepo) ListAll(ctx context.Context, activeOnly bool) ([]model.Service, error) {
+	q := `SELECT ` + serviceColumns + ` FROM services`
+	if activeOnly {
+		q += ` WHERE is_active = true`
+	}
+	q += ` ORDER BY category NULLS LAST, name`
+
+	rows, err := r.db.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []model.Service
+	for rows.Next() {
+		s, err := scanService(rows)
+		if err != nil {
 			return nil, err
 		}
 		result = append(result, s)
@@ -78,14 +127,10 @@ func (r *ServiceRepo) ListByDoctor(ctx context.Context, doctorID int64) ([]model
 }
 
 func (r *ServiceRepo) GetByID(ctx context.Context, id int64) (*model.Service, error) {
-	var s model.Service
-	err := r.db.QueryRow(ctx, `
-		SELECT id, doctor_id, direction_id, name, description,
-		       duration_minutes, price, is_active, created_at, updated_at
+	s, err := scanService(r.db.QueryRow(ctx, `
+		SELECT `+serviceColumns+`
 		FROM   services
-		WHERE  id = $1`, id).
-		Scan(&s.ID, &s.DoctorID, &s.DirectionID, &s.Name, &s.Description,
-			&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+		WHERE  id = $1`, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, apperrors.ErrNotFound
@@ -96,16 +141,12 @@ func (r *ServiceRepo) GetByID(ctx context.Context, id int64) (*model.Service, er
 }
 
 func (r *ServiceRepo) Create(ctx context.Context, input CreateServiceInput) (*model.Service, error) {
-	var s model.Service
-	err := r.db.QueryRow(ctx, `
-		INSERT INTO services (doctor_id, direction_id, name, description, duration_minutes, price)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, doctor_id, direction_id, name, description,
-		          duration_minutes, price, is_active, created_at, updated_at`,
-		input.DoctorID, input.DirectionID, input.Name, input.Description,
-		input.DurationMinutes, input.Price).
-		Scan(&s.ID, &s.DoctorID, &s.DirectionID, &s.Name, &s.Description,
-			&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+	s, err := scanService(r.db.QueryRow(ctx, `
+		INSERT INTO services (doctor_id, direction_id, category, name, description, duration_minutes, price)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING `+serviceColumns,
+		input.DoctorID, input.DirectionID, input.Category, input.Name, input.Description,
+		input.DurationMinutes, input.Price))
 	if err != nil {
 		return nil, err
 	}
@@ -113,18 +154,14 @@ func (r *ServiceRepo) Create(ctx context.Context, input CreateServiceInput) (*mo
 }
 
 func (r *ServiceRepo) Update(ctx context.Context, id int64, input UpdateServiceInput) (*model.Service, error) {
-	var s model.Service
-	err := r.db.QueryRow(ctx, `
+	s, err := scanService(r.db.QueryRow(ctx, `
 		UPDATE services
-		SET    direction_id = $1, name = $2, description = $3,
-		       duration_minutes = $4, price = $5, updated_at = NOW()
-		WHERE  id = $6
-		RETURNING id, doctor_id, direction_id, name, description,
-		          duration_minutes, price, is_active, created_at, updated_at`,
-		input.DirectionID, input.Name, input.Description,
-		input.DurationMinutes, input.Price, id).
-		Scan(&s.ID, &s.DoctorID, &s.DirectionID, &s.Name, &s.Description,
-			&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+		SET    direction_id = $1, category = $2, name = $3, description = $4,
+		       duration_minutes = $5, price = $6, updated_at = NOW()
+		WHERE  id = $7
+		RETURNING `+serviceColumns,
+		input.DirectionID, input.Category, input.Name, input.Description,
+		input.DurationMinutes, input.Price, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, apperrors.ErrNotFound

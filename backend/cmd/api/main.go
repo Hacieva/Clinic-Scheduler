@@ -65,8 +65,20 @@ func main() {
 	doctorHandler := handler.NewDoctorHandler(doctorSvc)
 
 	serviceRepo := repository.NewServiceRepo(pool)
+
+	// Legacy per-doctor service management (still used by bot and old UI paths).
+	// TODO: migrate bot to use doctor_services junction endpoints.
 	medicalSvc := service.NewMedicalServiceService(serviceRepo, doctorRepo)
 	serviceHandler := handler.NewServiceHandler(medicalSvc)
+
+	// Global catalog: services are owned by the clinic, not individual doctors.
+	catalogSvc := service.NewServiceCatalogService(serviceRepo)
+	catalogHandler := handler.NewServiceCatalogHandler(catalogSvc)
+
+	// Doctor–service assignment via junction table.
+	doctorSvcRepo := repository.NewDoctorServiceRepo(pool)
+	assignmentSvc := service.NewDoctorAssignmentService(doctorSvcRepo, serviceRepo, doctorRepo)
+	assignmentHandler := handler.NewDoctorAssignmentHandler(assignmentSvc)
 
 	scheduleRepo := repository.NewScheduleRepo(pool)
 	scheduleSvc := service.NewScheduleService(scheduleRepo)
@@ -85,7 +97,7 @@ func main() {
 	patientHandler := handler.NewPatientHandler(patientSvc)
 
 	apptRepo := repository.NewAppointmentRepo(pool)
-	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo)
+	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo, doctorSvcRepo)
 	apptHandler := handler.NewAppointmentHandler(apptSvc)
 
 	r := chi.NewRouter()
@@ -103,11 +115,12 @@ func main() {
 		r.Post("/auth/refresh", authHandler.Refresh)
 
 		// Bot endpoints — X-Bot-Token auth, no JWT
+		// TODO: add GET /bot/doctors/{id}/assigned-services after bot migration.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.BotAuth(botSecret))
 			r.Get("/bot/directions", directionHandler.List)
 			r.Get("/bot/doctors", doctorHandler.List)
-			r.Get("/bot/doctors/{id}/services", serviceHandler.List)
+			r.Get("/bot/doctors/{id}/services", serviceHandler.List) // TODO: legacy; uses doctor_id column
 			r.Post("/bot/appointments", apptHandler.BotCreate)
 			r.Post("/bot/appointments/{id}/cancel", apptHandler.BotCancel)
 			r.Get("/bot/availability", availHandler.GetAvailability)
@@ -123,13 +136,24 @@ func main() {
 			r.Get("/directions/{id}", directionHandler.GetByID)
 			r.Get("/doctors", doctorHandler.List)
 			r.Get("/doctors/{id}", doctorHandler.GetByID)
+
+			// Legacy per-doctor service endpoints (kept for backward compat).
+			// TODO: remove after frontend fully migrates to /assigned-services.
 			r.Get("/doctors/{id}/services", serviceHandler.List)
 			r.Get("/doctors/{id}/services/{serviceId}", serviceHandler.GetByID)
+
+			// Junction-based assignment (new authoritative endpoints).
+			r.Get("/doctors/{id}/assigned-services", assignmentHandler.ListAssigned)
+
 			r.Get("/doctors/{id}/working-hours", scheduleHandler.ListWorkingHours)
 			r.Get("/doctors/{id}/exceptions", scheduleHandler.ListExceptions)
+
+			// Global service catalog (all authenticated users can read).
+			r.Get("/services", catalogHandler.ListAll)
+
 			r.Get("/availability", availHandler.GetAvailability)
 
-			// Branch endpoints — owner + admin for all operations
+			// Branch endpoints — owner + admin
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireRole("owner", "admin"))
 				r.Get("/branches", branchHandler.List)
@@ -165,13 +189,28 @@ func main() {
 				r.Delete("/doctors/{id}", doctorHandler.Delete)
 				r.Post("/doctors/{id}/account", doctorHandler.CreateAccount)
 				r.Put("/doctors/{id}/directions", doctorHandler.SetDirections)
+
+				// Legacy per-doctor service CRUD (kept for backward compat).
+				// TODO: remove after frontend migrates to catalog + assignment flow.
 				r.Post("/doctors/{id}/services", serviceHandler.Create)
 				r.Put("/doctors/{id}/services/{serviceId}", serviceHandler.Update)
 				r.Delete("/doctors/{id}/services/{serviceId}", serviceHandler.Delete)
+
+				// Junction-based assignment mutations (new authoritative endpoints).
+				r.Put("/doctors/{id}/assigned-services", assignmentHandler.BulkSet)
+				r.Post("/doctors/{id}/assigned-services/{serviceId}", assignmentHandler.Assign)
+				r.Delete("/doctors/{id}/assigned-services/{serviceId}", assignmentHandler.Unassign)
+
 				r.Put("/doctors/{id}/working-hours", scheduleHandler.ReplaceWorkingHours)
 				r.Post("/doctors/{id}/exceptions", scheduleHandler.CreateException)
 				r.Put("/doctors/{id}/exceptions/{exId}", scheduleHandler.UpdateException)
 				r.Delete("/doctors/{id}/exceptions/{exId}", scheduleHandler.DeleteException)
+
+				// Global service catalog mutations.
+				r.Post("/services", catalogHandler.Create)
+				r.Put("/services/{id}", catalogHandler.Update)
+				r.Delete("/services/{id}", catalogHandler.Delete)
+
 				r.Post("/appointments", apptHandler.AdminCreate)
 				r.Get("/appointments", apptHandler.List)
 				r.Get("/appointments/{id}", apptHandler.GetByID)

@@ -103,10 +103,7 @@ export default function DoctorDetailPage() {
         />
       )}
       {activeTab === 'services' && (
-        <DoctorServicesTab
-          doctorId={doctorId}
-          doctorDirections={doctor.directions ?? []}
-        />
+        <DoctorServicesTab doctorId={doctorId} />
       )}
       {activeTab === 'schedule' && <DoctorScheduleTab doctorId={doctorId} />}
       {activeTab === 'exceptions' && <DoctorExceptionsTab doctorId={doctorId} />}

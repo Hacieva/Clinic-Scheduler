@@ -10,17 +10,24 @@ import (
 )
 
 type AppointmentService struct {
-	repo       repository.AppointmentRepository
-	doctorRepo repository.DoctorRepository
-	svcRepo    repository.ServiceRepository
+	repo          repository.AppointmentRepository
+	doctorRepo    repository.DoctorRepository
+	svcRepo       repository.ServiceRepository
+	doctorSvcRepo repository.DoctorServiceRepository
 }
 
 func NewAppointmentService(
 	repo repository.AppointmentRepository,
 	doctorRepo repository.DoctorRepository,
 	svcRepo repository.ServiceRepository,
+	doctorSvcRepo repository.DoctorServiceRepository,
 ) *AppointmentService {
-	return &AppointmentService{repo: repo, doctorRepo: doctorRepo, svcRepo: svcRepo}
+	return &AppointmentService{
+		repo:          repo,
+		doctorRepo:    doctorRepo,
+		svcRepo:       svcRepo,
+		doctorSvcRepo: doctorSvcRepo,
+	}
 }
 
 // CreateAppointmentInput is the service-level booking input.
@@ -83,7 +90,13 @@ func (s *AppointmentService) Create(ctx context.Context, input CreateAppointment
 	if !svc.IsActive {
 		return nil, apperrors.ErrNotFound
 	}
-	if svc.DoctorID != input.DoctorID {
+
+	// Validate doctor–service assignment via junction table (authoritative source).
+	assigned, err := s.doctorSvcRepo.IsAssigned(ctx, input.DoctorID, input.ServiceID)
+	if err != nil {
+		return nil, err
+	}
+	if !assigned {
 		return nil, apperrors.ErrDirectionMismatch
 	}
 

@@ -40,6 +40,26 @@ func (m *mockAppointmentRepo) UpdateStatus(_ context.Context, _ int64, _, _ mode
 	return m.updateErr
 }
 
+// mockDoctorServiceRepo implements repository.DoctorServiceRepository for service-layer tests.
+type mockDoctorServiceRepo struct {
+	assigned bool
+	err      error
+}
+
+func (m *mockDoctorServiceRepo) ListAssignedToDoctor(_ context.Context, _ int64) ([]model.Service, error) {
+	return nil, m.err
+}
+
+func (m *mockDoctorServiceRepo) IsAssigned(_ context.Context, _, _ int64) (bool, error) {
+	return m.assigned, m.err
+}
+
+func (m *mockDoctorServiceRepo) Assign(_ context.Context, _, _ int64) error      { return m.err }
+func (m *mockDoctorServiceRepo) Unassign(_ context.Context, _, _ int64) error    { return m.err }
+func (m *mockDoctorServiceRepo) BulkReplace(_ context.Context, _ int64, _ []int64) error {
+	return m.err
+}
+
 // helpers
 
 func sampleAppt() *model.Appointment {
@@ -74,10 +94,12 @@ func sampleApptDetail(status model.AppointmentStatus) *repository.AppointmentDet
 	}
 }
 
+func int64Ptr(v int64) *int64 { return &v }
+
 func activeSvc() *model.Service {
 	return &model.Service{
 		ID:              1,
-		DoctorID:        1,
+		DoctorID:        int64Ptr(1), // TODO: legacy field; assignment validated via doctorSvcRepo
 		DirectionID:     1,
 		Name:            "Consultation",
 		DurationMinutes: 30,
@@ -98,8 +120,11 @@ func sampleCreateInput() CreateAppointmentInput {
 	}
 }
 
+// newApptSvc builds an AppointmentService with a default doctorSvcRepo that
+// reports the service as assigned (IsAssigned = true). Tests that need to
+// override the assignment mock should construct AppointmentService directly.
 func newApptSvc(apptRepo *mockAppointmentRepo, docRepo *mockDoctorRepo, svcRepo *mockServiceRepo) *AppointmentService {
-	return NewAppointmentService(apptRepo, docRepo, svcRepo)
+	return NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorServiceRepo{assigned: true})
 }
 
 // — Create —
@@ -178,12 +203,12 @@ func TestAppointmentCreate_ServiceInactive(t *testing.T) {
 
 func TestAppointmentCreate_ServiceWrongDoctor(t *testing.T) {
 	doc := sampleDoctorWithDir()
-	wrongSvc := activeSvc()
-	wrongSvc.DoctorID = 99 // belongs to a different doctor
-	svc := newApptSvc(
+	// Service exists and is active, but doctor is NOT assigned to it via junction.
+	svc := NewAppointmentService(
 		&mockAppointmentRepo{},
 		&mockDoctorRepo{doctor: doc},
-		&mockServiceRepo{svc: wrongSvc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: false},
 	)
 
 	result, err := svc.Create(context.Background(), sampleCreateInput())
@@ -526,6 +551,7 @@ func TestAppointmentCreate_ConcurrentSlot(t *testing.T) {
 		&slotOnceRepo{},
 		&mockDoctorRepo{doctor: sampleDoctorWithDir()},
 		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
 	)
 
 	input := sampleCreateInput()

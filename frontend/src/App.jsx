@@ -14,6 +14,7 @@ import BranchesPage from './pages/admin/settings/BranchesPage'
 import UsersPage from './pages/admin/settings/UsersPage'
 import IntegrationsPage from './pages/admin/settings/IntegrationsPage'
 import PricesPage from './pages/admin/settings/PricesPage'
+import ServicesPage from './pages/admin/settings/ServicesPage'
 import LabPage from './pages/admin/settings/LabPage'
 import ClinicPage from './pages/admin/settings/ClinicPage'
 import DashboardPage from './pages/admin/DashboardPage'
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="/admin/settings/users" element={<UsersPage />} />
             <Route path="/admin/settings/directions" element={<DirectionsPage />} />
             <Route path="/admin/settings/integrations" element={<IntegrationsPage />} />
+            <Route path="/admin/settings/services" element={<ServicesPage />} />
             <Route path="/admin/settings/prices" element={<PricesPage />} />
             <Route path="/admin/settings/lab" element={<LabPage />} />
             <Route path="/admin/settings" element={<Navigate to="/admin/settings/clinic" replace />} />

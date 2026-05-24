@@ -27,6 +27,7 @@ const SETTINGS_NAV = [
   { to: '/admin/settings/branches',     label: 'Филиалы',       icon: Building2 },
   { to: '/admin/settings/users',        label: 'Пользователи',  icon: UserCog },
   { to: '/admin/settings/directions',   label: 'Направления',   icon: BookOpen },
+  { to: '/admin/settings/services',     label: 'Услуги',        icon: Tag },
   { to: '/admin/settings/prices',       label: 'Прайсы',        icon: Tag },
   { to: '/admin/settings/integrations', label: 'Интеграции',    icon: Plug2 },
   { to: '/admin/settings/lab',          label: 'Лаборатория',   icon: FlaskConical },

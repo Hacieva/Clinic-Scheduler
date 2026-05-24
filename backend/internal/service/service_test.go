@@ -24,6 +24,10 @@ func (m *mockServiceRepo) ListByDoctor(_ context.Context, _ int64) ([]model.Serv
 	return m.services, m.err
 }
 
+func (m *mockServiceRepo) ListAll(_ context.Context, _ bool) ([]model.Service, error) {
+	return m.services, m.err
+}
+
 func (m *mockServiceRepo) GetByID(_ context.Context, _ int64) (*model.Service, error) {
 	return m.svc, m.err
 }
@@ -36,6 +40,7 @@ func (m *mockServiceRepo) Create(_ context.Context, input repository.CreateServi
 		ID:              1,
 		DoctorID:        input.DoctorID,
 		DirectionID:     input.DirectionID,
+		Category:        input.Category,
 		Name:            input.Name,
 		Description:     input.Description,
 		DurationMinutes: input.DurationMinutes,
@@ -53,6 +58,7 @@ func (m *mockServiceRepo) Update(_ context.Context, id int64, input repository.U
 	return &model.Service{
 		ID:              id,
 		DirectionID:     input.DirectionID,
+		Category:        input.Category,
 		Name:            input.Name,
 		Description:     input.Description,
 		DurationMinutes: input.DurationMinutes,
@@ -96,7 +102,7 @@ func sampleSvcInput() ServiceInput {
 func TestMedicalServiceList_Success(t *testing.T) {
 	price := int64(150000)
 	svcs := []model.Service{{
-		ID: 1, DoctorID: 1, DirectionID: 1, Name: "Consultation",
+		ID: 1, DoctorID: int64Ptr(1), DirectionID: 1, Name: "Consultation",
 		DurationMinutes: 30, Price: &price, IsActive: true,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}}
@@ -120,7 +126,7 @@ func TestMedicalServiceList_Empty(t *testing.T) {
 
 func TestMedicalServiceGetByID_Success(t *testing.T) {
 	s := &model.Service{
-		ID: 1, DoctorID: 1, DirectionID: 1, Name: "Consultation",
+		ID: 1, DoctorID: int64Ptr(1), DirectionID: 1, Name: "Consultation",
 		DurationMinutes: 30, IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	svc := NewMedicalServiceService(&mockServiceRepo{svc: s}, &mockDoctorRepo{})
@@ -147,7 +153,8 @@ func TestMedicalServiceCreate_Success(t *testing.T) {
 	result, err := svc.Create(context.Background(), 1, sampleSvcInput())
 	require.NoError(t, err)
 	assert.Equal(t, "Consultation", result.Name)
-	assert.Equal(t, int64(1), result.DoctorID)
+	require.NotNil(t, result.DoctorID)
+	assert.Equal(t, int64(1), *result.DoctorID)
 }
 
 func TestMedicalServiceCreate_DoctorNotFound(t *testing.T) {

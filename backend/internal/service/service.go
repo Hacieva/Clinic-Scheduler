@@ -45,7 +45,7 @@ func (s *MedicalServiceService) Create(ctx context.Context, doctorID int64, inpu
 		return nil, apperrors.ErrDirectionMismatch
 	}
 	return s.repo.Create(ctx, repository.CreateServiceInput{
-		DoctorID:        doctorID,
+		DoctorID:        &doctorID, // TODO: legacy; remove after bot migrates to doctor_services
 		DirectionID:     input.DirectionID,
 		Name:            input.Name,
 		Description:     input.Description,

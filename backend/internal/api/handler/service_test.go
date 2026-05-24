@@ -29,6 +29,10 @@ func (m *mockServiceRepo) ListByDoctor(_ context.Context, _ int64) ([]model.Serv
 	return m.services, m.err
 }
 
+func (m *mockServiceRepo) ListAll(_ context.Context, _ bool) ([]model.Service, error) {
+	return m.services, m.err
+}
+
 func (m *mockServiceRepo) GetByID(_ context.Context, _ int64) (*model.Service, error) {
 	return m.svc, m.err
 }
@@ -39,7 +43,7 @@ func (m *mockServiceRepo) Create(_ context.Context, input repository.CreateServi
 	}
 	return &model.Service{
 		ID: 1, DoctorID: input.DoctorID, DirectionID: input.DirectionID,
-		Name: input.Name, Description: input.Description,
+		Category: input.Category, Name: input.Name, Description: input.Description,
 		DurationMinutes: input.DurationMinutes, Price: input.Price,
 		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}, nil
@@ -50,7 +54,7 @@ func (m *mockServiceRepo) Update(_ context.Context, id int64, input repository.U
 		return nil, m.err
 	}
 	return &model.Service{
-		ID: id, DirectionID: input.DirectionID, Name: input.Name,
+		ID: id, DirectionID: input.DirectionID, Category: input.Category, Name: input.Name,
 		Description: input.Description, DurationMinutes: input.DurationMinutes, Price: input.Price,
 		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}, nil
@@ -67,10 +71,12 @@ func (m *mockServiceRepo) GetDurationMinutes(_ context.Context, _ int64) (int, e
 	return 30, nil
 }
 
+func handlerInt64Ptr(v int64) *int64 { return &v }
+
 func sampleServiceRow() *model.Service {
 	price := int64(150000)
 	return &model.Service{
-		ID: 1, DoctorID: 1, DirectionID: 1, Name: "Consultation",
+		ID: 1, DoctorID: handlerInt64Ptr(1), DirectionID: 1, Name: "Consultation",
 		DurationMinutes: 30, Price: &price,
 		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}

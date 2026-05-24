@@ -3,15 +3,18 @@ package model
 import "time"
 
 // Service mirrors the services table.
-// Price is nullable (DECIMAL(10,2)); stored as *float64 for simplicity in MVP.
+// DoctorID is nullable — services now live in a global catalog;
+// the field is kept temporarily for bot backward compatibility (TODO: remove after bot migrates to doctor_services).
+// Price is stored in kopecks (e.g. 300050 = 3000.50 ₽).
 type Service struct {
 	ID              int64     `json:"id"`
-	DoctorID        int64     `json:"doctor_id"`
+	DoctorID        *int64    `json:"doctor_id"` // TODO: legacy; nil for global-catalog services
 	DirectionID     int64     `json:"direction_id"`
+	Category        *string   `json:"category"`
 	Name            string    `json:"name"`
 	Description     *string   `json:"description"`
-	DurationMinutes int    `json:"duration_minutes"`
-	Price           *int64 `json:"price"` // kopecks (e.g. 300050 = 3000.50 ₽)
+	DurationMinutes int       `json:"duration_minutes"`
+	Price           *int64    `json:"price"` // kopecks (e.g. 300050 = 3000.50 ₽)
 	IsActive        bool      `json:"is_active"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`

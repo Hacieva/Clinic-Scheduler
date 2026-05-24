@@ -90,7 +90,7 @@ func sampleAdminDetailWithStatus(status model.AppointmentStatus) *repository.App
 
 func activeSvcForAppt() *model.Service {
 	return &model.Service{
-		ID: 1, DoctorID: 1, DirectionID: 1,
+		ID: 1, DoctorID: handlerInt64Ptr(1), DirectionID: 1,
 		Name: "Consultation", DurationMinutes: 30,
 		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -109,8 +109,27 @@ func futureStartAt() string {
 	return time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
 }
 
+// mockDoctorSvcRepo satisfies repository.DoctorServiceRepository for handler tests.
+// IsAssigned always returns true so appointment creation tests pass by default.
+type mockDoctorSvcRepo struct {
+	assigned bool
+	err      error
+}
+
+func (m *mockDoctorSvcRepo) ListAssignedToDoctor(_ context.Context, _ int64) ([]model.Service, error) {
+	return nil, m.err
+}
+func (m *mockDoctorSvcRepo) IsAssigned(_ context.Context, _, _ int64) (bool, error) {
+	return m.assigned, m.err
+}
+func (m *mockDoctorSvcRepo) Assign(_ context.Context, _, _ int64) error      { return m.err }
+func (m *mockDoctorSvcRepo) Unassign(_ context.Context, _, _ int64) error    { return m.err }
+func (m *mockDoctorSvcRepo) BulkReplace(_ context.Context, _ int64, _ []int64) error {
+	return m.err
+}
+
 func newAppointmentRouter(apptRepo *mockApptRepo, docRepo *mockDoctorRepo, svcRepo *mockServiceRepo, botSecret string) http.Handler {
-	svc := service.NewAppointmentService(apptRepo, docRepo, svcRepo)
+	svc := service.NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorSvcRepo{assigned: true})
 	h := NewAppointmentHandler(svc)
 
 	r := chi.NewRouter()
