@@ -10,7 +10,7 @@ import { getDoctors } from '../api/doctors'
 const DAY_START = 8 * 60    // 480 min → 08:00
 const DAY_END = 20 * 60     // 1200 min → 20:00
 const GRID_H = DAY_END - DAY_START  // 720 px (1 px = 1 min)
-const TIME_W = 56
+const TIME_W = 64
 const MIN_COL_W = 220
 
 const HOUR_LABELS = Array.from({ length: 13 }, (_, i) => ({
@@ -110,7 +110,12 @@ function doctorStats(appointments, doctorId) {
 
 // ─── DoctorCol ────────────────────────────────────────────────────────────────
 
-function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) {
+const HATCH = {
+  backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(107,114,128,0.1) 3px, rgba(107,114,128,0.1) 6px)',
+  backgroundColor: 'rgba(243,244,246,0.7)',
+}
+
+function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, workHours }) {
   const appts = appointments.filter((a) => a.doctor_id === doctor.id)
   const [hoverSnap, setHoverSnap] = useState(null)
 
@@ -119,11 +124,23 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
     return Math.min(Math.floor(y / 30) * 30, GRID_H - 30)
   }
 
+  const handleClick = (e) => {
+    const snap = getSnap(e)
+    const absMin = DAY_START + snap
+    if (workHours != null) {
+      if (absMin < workHours.startMin || absMin >= workHours.endMin) return
+    }
+    onSlotClick(doctor.id, minToTime(absMin))
+  }
+
+  const preBlockH    = workHours != null ? Math.max(0, workHours.startMin - DAY_START) : 0
+  const postBlockTop = workHours != null ? Math.max(0, workHours.endMin   - DAY_START) : GRID_H
+
   return (
     <div
       className="relative border-r border-gray-100 last:border-r-0 cursor-cell"
       style={{ height: `${GRID_H}px`, minWidth: `${MIN_COL_W}px` }}
-      onClick={(e) => onSlotClick(doctor.id, minToTime(DAY_START + getSnap(e)))}
+      onClick={handleClick}
       onMouseMove={(e) => setHoverSnap(getSnap(e))}
       onMouseLeave={() => setHoverSnap(null)}
     >
@@ -140,7 +157,31 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
         />
       ))}
 
-      {/* Current time line — spans each column for correct sticky behaviour */}
+      {/* Pre-work blocked zone */}
+      {preBlockH > 0 && (
+        <div
+          className="absolute inset-x-0 top-0 pointer-events-none"
+          style={{ height: `${preBlockH}px`, zIndex: 6, ...HATCH }}
+        />
+      )}
+
+      {/* Post-work blocked zone */}
+      {postBlockTop < GRID_H && (
+        <div
+          className="absolute inset-x-0 pointer-events-none"
+          style={{ top: `${postBlockTop}px`, bottom: 0, zIndex: 6, ...HATCH }}
+        />
+      )}
+
+      {/* Past-time overlay (today only) */}
+      {nowTop !== null && nowTop > 0 && (
+        <div
+          className="absolute inset-x-0 top-0 pointer-events-none bg-gray-100/40"
+          style={{ height: `${nowTop}px`, zIndex: 5 }}
+        />
+      )}
+
+      {/* Current time line */}
       {nowTop !== null && (
         <div
           className="absolute inset-x-0 h-px bg-red-400 pointer-events-none"
@@ -163,7 +204,7 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
       {/* Appointment events */}
       {appts.map((appt) => {
         const { top, height } = eventPos(appt)
-        const bg = EVT_BG[appt.status] ?? EVT_BG.created
+        const bg  = EVT_BG[appt.status]   ?? EVT_BG.created
         const txt = EVT_TEXT[appt.status] ?? EVT_TEXT.created
         return (
           <button
@@ -203,8 +244,10 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop }) 
 
 // ─── AppointmentGrid ──────────────────────────────────────────────────────────
 
-export default function AppointmentGrid({ date, branchId, onEventClick, onSlotClick, visibleDoctorIds }) {
-  const dateStr = format(date, 'yyyy-MM-dd')
+export default function AppointmentGrid({
+  date, branchId, onEventClick, onSlotClick, visibleDoctorIds, workingHoursMap,
+}) {
+  const dateStr      = format(date, 'yyyy-MM-dd')
   const viewingToday = isToday(date)
 
   const [nowTop, setNowTop] = useState(() => (viewingToday ? getNowTop() : null))
@@ -231,8 +274,8 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
     queryFn: () =>
       getAppointments({
         date_from: dateStr,
-        date_to: dateStr,
-        limit: 200,
+        date_to:   dateStr,
+        limit:     200,
         ...(branchId ? { branch_id: branchId } : {}),
       }),
   })
@@ -261,8 +304,8 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
       <div className="flex flex-col items-center justify-center flex-1 gap-3 text-gray-400">
         <Users size={36} strokeWidth={1.25} className="text-gray-300" />
         <div className="text-center">
-          <p className="text-sm font-medium text-gray-500">Нет активных врачей</p>
-          <p className="text-xs mt-0.5">Добавьте врачей в разделе «Врачи»</p>
+          <p className="text-sm font-medium text-gray-500">Нет врачей на этот день</p>
+          <p className="text-xs mt-0.5">Попробуйте изменить дату или фильтры</p>
         </div>
       </div>
     )
@@ -288,7 +331,7 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
             className="sticky left-0 z-30 shrink-0 bg-white border-r border-gray-200"
             style={{ width: `${TIME_W}px` }}
           />
-          {/* Doctor header cells */}
+          {/* Doctor header cells — compact */}
           {doctors.map((d) => {
             const { count, loadPct } = doctorStats(appointments, d.id)
             return (
@@ -297,34 +340,28 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
                 className="relative border-r border-gray-100 last:border-r-0 overflow-hidden"
                 style={{ minWidth: `${MIN_COL_W}px`, flex: '1 0 0' }}
               >
-                <div className="px-3 py-2.5 flex items-start gap-2">
-                  <div className={`w-7 h-7 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[11px] font-bold shrink-0 mt-0.5`}>
+                <div className="px-3 py-2 flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
                     {(d.last_name ?? d.first_name ?? '?')[0]}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-800 truncate">{fullName(d)}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{fullName(d)}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       {d.cabinet && (
-                        <span className="text-xs text-gray-400">Каб. {d.cabinet}</span>
+                        <span className="text-[10px] text-gray-400">Каб.{d.cabinet}</span>
                       )}
                       {count > 0 && (
-                        <span className="text-[10px] text-gray-400 font-medium shrink-0">{count} зап.</span>
+                        <span className="text-[10px] text-gray-500 font-medium">{count} зап.</span>
+                      )}
+                      {(d.directions ?? []).slice(0, 1).map((dir) => (
+                        <span key={dir.id} className="text-[10px] px-1 rounded bg-blue-50 text-blue-600 leading-tight">
+                          {dir.name}
+                        </span>
+                      ))}
+                      {(d.directions ?? []).length > 1 && (
+                        <span className="text-[10px] text-gray-400">+{d.directions.length - 1}</span>
                       )}
                     </div>
-                    {(d.directions ?? []).length > 0 && (
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {(d.directions ?? []).slice(0, 2).map((dir) => (
-                          <span key={dir.id} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 leading-none">
-                            {dir.name}
-                          </span>
-                        ))}
-                        {(d.directions ?? []).length > 2 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 leading-none">
-                            +{d.directions.length - 2}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
                 {/* Doctor load bar */}
@@ -352,7 +389,7 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
             {HOUR_LABELS.map(({ label, top }) => (
               <span
                 key={label}
-                className="absolute right-2 text-[11px] text-gray-400 -translate-y-1/2"
+                className="absolute right-2 text-xs text-gray-500 font-medium -translate-y-1/2"
                 style={{ top: `${top}px` }}
               >
                 {label}
@@ -378,6 +415,7 @@ export default function AppointmentGrid({ date, branchId, onEventClick, onSlotCl
               onEventClick={onEventClick}
               onSlotClick={onSlotClick}
               nowTop={nowTop}
+              workHours={workingHoursMap?.get(d.id)}
             />
           ))}
 

@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   addDays, subDays, format, isToday, startOfMonth, endOfMonth,
-  getDay, addMonths, subMonths, isSameMonth, isSameDay,
+  getDay, addMonths, subMonths, isSameMonth, isSameDay, parseISO,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import {
@@ -18,9 +18,12 @@ import Badge from '../../components/Badge'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import useBranchStore from '../../stores/branch'
 import { getDoctors } from '../../api/doctors'
-import { getDoctorServices } from '../../api/services'
+import { getDoctorServices, getAllServices } from '../../api/services'
 import { getPatients } from '../../api/patients'
+import { getWorkingHours } from '../../api/schedule'
+import { getBranches } from '../../api/branches'
 import {
+  getAppointments,
   createAppointment,
   confirmAppointment,
   cancelAppointment,
@@ -495,67 +498,63 @@ export default function ScheduleGridPage() {
   const qc = useQueryClient()
 
   const [date, setDate] = useState(new Date())
-  const activeBranchId = useBranchStore((s) => s.activeBranchId)
+  const activeBranchId    = useBranchStore((s) => s.activeBranchId)
+  const setActiveBranchId = useBranchStore((s) => s.setActiveBranchId)
 
-  // Left panel filter state: null = all visible
-  const [checkedDoctorIds, setCheckedDoctorIds] = useState(null)
-  const [specFilter, setSpecFilter] = useState('')
+  // Filter state
+  const [specFilter,       setSpecFilter]       = useState('')
+  const [doctorNameFilter, setDoctorNameFilter] = useState('')
+  const [serviceFilter,    setServiceFilter]    = useState('')
 
   // Modal state
-  const [selectedAppt, setSelectedAppt] = useState(null)
-  const [createModal, setCreateModal] = useState(null)
-  const [cancelTarget, setCancelTarget] = useState(null)
-  const [simpleAction, setSimpleAction] = useState(null)
+  const [selectedAppt,   setSelectedAppt]   = useState(null)
+  const [createModal,    setCreateModal]    = useState(null)
+  const [cancelTarget,   setCancelTarget]   = useState(null)
+  const [simpleAction,   setSimpleAction]   = useState(null)
   const [createDoctorId, setCreateDoctorId] = useState('')
 
-  // ── Doctor list for left panel (same query key → shared cache with AppointmentGrid) ──
+  // ── Doctor list (shared cache with AppointmentGrid) ──
   const { data: allDoctors = [] } = useQuery({
     queryKey: ['grid-doctors', activeBranchId ?? null],
     queryFn: () => getDoctors(activeBranchId ? { branch_id: activeBranchId } : undefined),
   })
   const activeDoctors = useMemo(() => allDoctors.filter((d) => d.is_active), [allDoctors])
 
-  // Unique specializations derived from active doctors' directions
-  const uniqueSpecs = useMemo(() => {
-    const set = new Set()
-    activeDoctors.forEach((d) => (d.directions ?? []).forEach((dir) => set.add(dir.name)))
-    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
-  }, [activeDoctors])
+  // ── Branches ──
+  const { data: branches = [] } = useQuery({
+    queryKey: ['branches'],
+    queryFn: getBranches,
+    staleTime: 10 * 60 * 1000,
+  })
 
-  // Doctors shown in the panel (filtered by specialty)
-  const panelDoctors = useMemo(() => {
-    if (!specFilter) return activeDoctors
-    return activeDoctors.filter((d) =>
-      (d.directions ?? []).some((dir) => dir.name === specFilter)
-    )
-  }, [activeDoctors, specFilter])
+  // ── Catalog services for filter dropdown ──
+  const { data: catalogServices = [] } = useQuery({
+    queryKey: ['catalog-services'],
+    queryFn: () => getAllServices(true),
+    staleTime: 5 * 60 * 1000,
+  })
 
-  // Reset checkbox state when specialty filter changes
-  useEffect(() => { setCheckedDoctorIds(null) }, [specFilter])
+  // ── Working hours per doctor ──
+  const workingHoursQueries = useQueries({
+    queries: activeDoctors.map((d) => ({
+      queryKey: ['doctor-working-hours', d.id],
+      queryFn: () => getWorkingHours(d.id),
+      staleTime: 5 * 60 * 1000,
+    })),
+  })
 
-  // Visible doctor IDs for the grid: apply spec filter first, then checkbox filter
-  const visibleDoctorIds = useMemo(() => {
-    const panelIds = panelDoctors.map((d) => d.id)
-    if (!specFilter && checkedDoctorIds === null) return null
-    if (!specFilter) {
-      return checkedDoctorIds.length === 0 ? activeDoctors.map((d) => d.id) : checkedDoctorIds
-    }
-    if (checkedDoctorIds === null) return panelIds
-    const intersection = checkedDoctorIds.filter((id) => panelIds.includes(id))
-    return intersection.length > 0 ? intersection : panelIds
-  }, [checkedDoctorIds, activeDoctors, panelDoctors, specFilter])
-
-  const toggleDoctor = (id) => {
-    setCheckedDoctorIds((prev) => {
-      const set = prev ?? panelDoctors.map((d) => d.id)
-      return set.includes(id) ? set.filter((x) => x !== id) : [...set, id]
-    })
-  }
-
-  const allPanelChecked =
-    checkedDoctorIds === null ||
-    panelDoctors.every((d) => (checkedDoctorIds ?? []).includes(d.id))
-  const toggleAll = () => setCheckedDoctorIds(allPanelChecked ? [] : null)
+  // ── Today's appointments (shared cache key with AppointmentGrid) ──
+  const dateStr = format(date, 'yyyy-MM-dd')
+  const { data: todayAppointments = [] } = useQuery({
+    queryKey: ['grid-appointments', dateStr, activeBranchId ?? null],
+    queryFn: () =>
+      getAppointments({
+        date_from: dateStr,
+        date_to:   dateStr,
+        limit:     200,
+        ...(activeBranchId ? { branch_id: activeBranchId } : {}),
+      }),
+  })
 
   // ── Services for create form ──
   const { data: createServices = [] } = useQuery({
@@ -563,6 +562,108 @@ export default function ScheduleGridPage() {
     queryFn: () => getDoctorServices(Number(createDoctorId)),
     enabled: !!createDoctorId,
   })
+
+  // ── Derived: unique specializations ──
+  const uniqueSpecs = useMemo(() => {
+    const set = new Set()
+    activeDoctors.forEach((d) => (d.directions ?? []).forEach((dir) => set.add(dir.name)))
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [activeDoctors])
+
+  // ── Derived: selected day of week (DB: 1=Mon … 7=Sun) ──
+  const selectedDow = useMemo(() => {
+    const j = date.getDay()
+    return j === 0 ? 7 : j
+  }, [date])
+
+  // ── Derived: working hours map keyed by doctor id ──
+  const workingHoursMap = useMemo(() => {
+    const map = new Map()
+    activeDoctors.forEach((d, i) => {
+      const q = workingHoursQueries[i]
+      if (!q?.data) return
+      const wh = q.data.find((w) => w.day_of_week === selectedDow)
+      if (!wh) {
+        map.set(d.id, null)
+      } else {
+        const st = parseISO(wh.start_time)
+        const et = parseISO(wh.end_time)
+        map.set(d.id, {
+          startMin: st.getUTCHours() * 60 + st.getUTCMinutes(),
+          endMin:   et.getUTCHours() * 60 + et.getUTCMinutes(),
+        })
+      }
+    })
+    return map
+  }, [activeDoctors, workingHoursQueries, selectedDow])
+
+  const workingHoursAllLoaded =
+    workingHoursQueries.length === 0 || workingHoursQueries.every((q) => q.isFetched)
+
+  // ── Derived: visible doctor IDs (filters applied) ──
+  const visibleDoctorIds = useMemo(() => {
+    if (!workingHoursAllLoaded) return null
+
+    let ids = activeDoctors.map((d) => d.id)
+
+    // Hide doctors who don't work on the selected day
+    ids = ids.filter((id) => {
+      if (!workingHoursMap.has(id)) return true   // no data loaded → keep
+      return workingHoursMap.get(id) !== null
+    })
+
+    // Specialty filter
+    if (specFilter) {
+      ids = ids.filter((id) => {
+        const d = activeDoctors.find((x) => x.id === id)
+        return d && (d.directions ?? []).some((dir) => dir.name === specFilter)
+      })
+    }
+
+    // Doctor name search
+    if (doctorNameFilter.trim()) {
+      const q = doctorNameFilter.trim().toLowerCase()
+      ids = ids.filter((id) => {
+        const d = activeDoctors.find((x) => x.id === id)
+        return (
+          d &&
+          [d.last_name, d.first_name, d.middle_name]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(q)
+        )
+      })
+    }
+
+    // Service filter — match doctors who have today's appointments for that service
+    if (serviceFilter) {
+      const withSvc = new Set(
+        todayAppointments
+          .filter((a) => String(a.service_id) === serviceFilter)
+          .map((a) => a.doctor_id),
+      )
+      if (withSvc.size > 0) {
+        ids = ids.filter((id) => withSvc.has(id))
+      }
+    }
+
+    return ids
+  }, [
+    activeDoctors, workingHoursAllLoaded, workingHoursMap,
+    specFilter, doctorNameFilter, serviceFilter, todayAppointments,
+  ])
+
+  // ── Derived: queue stats ──
+  const queueStats = useMemo(() => ({
+    total:   todayAppointments.filter(
+      (a) => !['cancelled_by_admin', 'cancelled_by_patient'].includes(a.status),
+    ).length,
+    waiting: todayAppointments.filter(
+      (a) => a.status === 'created' || a.status === 'confirmed',
+    ).length,
+    done: todayAppointments.filter((a) => a.status === 'completed').length,
+  }), [todayAppointments])
 
   const invalidateGrid = () => {
     qc.invalidateQueries({ queryKey: ['grid-appointments'] })
@@ -618,33 +719,35 @@ export default function ScheduleGridPage() {
     setCreateDoctorId(String(doctorId))
   }
 
-  const handleEventClick = (appt) => setSelectedAppt(appt)
-  const handleConfirmAppt = (appt) => setSimpleAction({ appt, action: 'confirm', title: 'Подтвердить запись', label: 'Подтвердить' })
-  const handleCompleteAppt = (appt) => setSimpleAction({ appt, action: 'complete', title: 'Завершить запись', label: 'Завершить' })
-  const handleNoShowAppt = (appt) => setSimpleAction({ appt, action: 'noShow', title: 'Отметить «Не пришёл»', label: 'Отметить' })
+  const handleEventClick      = (appt) => setSelectedAppt(appt)
+  const handleConfirmAppt     = (appt) => setSimpleAction({ appt, action: 'confirm',  title: 'Подтвердить запись',       label: 'Подтвердить' })
+  const handleCompleteAppt    = (appt) => setSimpleAction({ appt, action: 'complete', title: 'Завершить запись',         label: 'Завершить' })
+  const handleNoShowAppt      = (appt) => setSimpleAction({ appt, action: 'noShow',   title: 'Отметить «Не пришёл»',     label: 'Отметить' })
 
   const handleSimpleConfirm = () => {
     if (!simpleAction) return
     const id = simpleAction.appt.id
-    if (simpleAction.action === 'confirm') confirmMut.mutate(id)
+    if (simpleAction.action === 'confirm')  confirmMut.mutate(id)
     else if (simpleAction.action === 'complete') completeMut.mutate(id)
-    else if (simpleAction.action === 'noShow') noShowMut.mutate(id)
+    else if (simpleAction.action === 'noShow')   noShowMut.mutate(id)
   }
 
   const handleCreateSubmit = (data) => {
     createMut.mutate({
-      patient_name: data.patient_name,
+      patient_name:  data.patient_name,
       patient_phone: data.patient_phone,
-      doctor_id: Number(data.doctor_id),
-      service_id: Number(data.service_id),
-      start_at: new Date(data.start_at).toISOString(),
+      doctor_id:     Number(data.doctor_id),
+      service_id:    Number(data.service_id),
+      start_at:      new Date(data.start_at).toISOString(),
       ...(data.patient_comment ? { patient_comment: data.patient_comment } : {}),
     })
   }
 
   const simpleActionPending = confirmMut.isPending || completeMut.isPending || noShowMut.isPending
-  const dateLabel = format(date, 'EEEE, d MMMM yyyy', { locale: ru })
+  const dateLabel   = format(date, 'EEEE, d MMMM yyyy', { locale: ru })
   const viewingToday = isToday(date)
+
+  const anyFilterActive = specFilter || doctorNameFilter || serviceFilter
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden">
@@ -671,87 +774,85 @@ export default function ScheduleGridPage() {
           <MiniCalendar selected={date} onChange={setDate} />
         </div>
 
-        {/* Specialty filter */}
-        {uniqueSpecs.length > 0 && (
-          <div className="border-t border-gray-100 pt-2 px-3">
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
-              Специализация
-            </p>
+        {/* ── Filters ── */}
+        <div className="border-t border-gray-100 pt-2 px-3 pb-3 space-y-2.5">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+            Фильтры
+          </p>
+
+          {/* Specialty */}
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Специализация</label>
             <select
               value={specFilter}
               onChange={(e) => setSpecFilter(e.target.value)}
               className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
             >
-              <option value="">Все специализации</option>
+              <option value="">Все</option>
               {uniqueSpecs.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
-        )}
 
-        {/* Doctor filter */}
-        {activeDoctors.length > 0 && (
-          <div className="border-t border-gray-100 pt-3 flex-1">
-            <div className="px-3 mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                Сотрудники
-              </span>
-              <button
-                onClick={toggleAll}
-                className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
+          {/* Doctor name search */}
+          <div>
+            <label className="text-[10px] text-gray-500 block mb-1">Врач</label>
+            <div className="relative">
+              <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                value={doctorNameFilter}
+                onChange={(e) => setDoctorNameFilter(e.target.value)}
+                placeholder="Поиск по ФИО…"
+                className="w-full pl-6 pr-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+          </div>
+
+          {/* Branch — only when multiple exist */}
+          {branches.length > 1 && (
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-1">Филиал</label>
+              <select
+                value={activeBranchId ?? ''}
+                onChange={(e) => setActiveBranchId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
               >
-                {allPanelChecked ? 'Снять все' : 'Все'}
-              </button>
+                <option value="">Все филиалы</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
             </div>
-            <div className="px-2 space-y-0.5">
-              {panelDoctors.map((d) => {
-                const checked =
-                  checkedDoctorIds === null || checkedDoctorIds.includes(d.id)
-                const name = [d.last_name, d.first_name].filter(Boolean).join(' ')
-                const initial = (d.last_name ?? d.first_name ?? '?')[0]
-                return (
-                  <label
-                    key={d.id}
-                    className="flex items-center gap-2 px-1 py-1 rounded-md cursor-pointer hover:bg-gray-50 select-none transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      className="rounded shrink-0 accent-blue-600"
-                      checked={checked}
-                      onChange={() => toggleDoctor(d.id)}
-                    />
-                    <div
-                      className={`w-5 h-5 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[9px] font-bold shrink-0`}
-                    >
-                      {initial}
-                    </div>
-                    <span className="text-xs text-gray-700 truncate">{name}</span>
-                  </label>
-                )
-              })}
-              {panelDoctors.length === 0 && (
-                <p className="text-xs text-gray-400 px-1 py-1">Нет сотрудников</p>
-              )}
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Patient quick search */}
-        <div className="border-t border-gray-100 pt-2 pb-2 px-3">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
-            Пациент
-          </p>
-          <div className="relative">
-            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="ФИО или телефон…"
-              className="w-full pl-6 pr-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
-              readOnly
-              title="Поиск пациентов появится в v0.3"
-            />
-          </div>
+          {/* Service */}
+          {catalogServices.length > 0 && (
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-1">Услуга</label>
+              <select
+                value={serviceFilter}
+                onChange={(e) => setServiceFilter(e.target.value)}
+                className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">Все услуги</option>
+                {catalogServices.map((s) => (
+                  <option key={s.id} value={String(s.id)}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Reset link */}
+          {anyFilterActive && (
+            <button
+              onClick={() => { setSpecFilter(''); setDoctorNameFilter(''); setServiceFilter('') }}
+              className="text-[10px] text-blue-600 hover:text-blue-800 font-medium w-full text-left"
+            >
+              × Сбросить фильтры
+            </button>
+          )}
         </div>
       </aside>
 
@@ -780,11 +881,9 @@ export default function ScheduleGridPage() {
           </span>
 
           {/* Filter indicator */}
-          {(specFilter || (checkedDoctorIds !== null && checkedDoctorIds.length < activeDoctors.length)) && (
+          {visibleDoctorIds !== null && visibleDoctorIds.length < activeDoctors.length && (
             <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
-              {specFilter
-                ? `${panelDoctors.length} сотр.`
-                : `${checkedDoctorIds.length} из ${activeDoctors.length}`}
+              {visibleDoctorIds.length} из {activeDoctors.length}
             </span>
           )}
 
@@ -806,12 +905,29 @@ export default function ScheduleGridPage() {
           onEventClick={handleEventClick}
           onSlotClick={handleSlotClick}
           visibleDoctorIds={visibleDoctorIds}
+          workingHoursMap={workingHoursMap}
         />
 
-        {/* Waiting patients placeholder */}
-        <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-2 flex items-center gap-2">
+        {/* ── Queue stats panel ── */}
+        <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-2 flex items-center gap-3">
           <Users size={13} className="text-gray-400 shrink-0" />
-          <span className="text-xs text-gray-400">Ожидающие пациенты — появится в v0.3</span>
+          <span className="text-xs text-gray-600 font-medium">
+            {format(date, 'd MMM', { locale: ru })}:
+          </span>
+          <span className="text-xs text-gray-700">{queueStats.total} зап.</span>
+          {queueStats.waiting > 0 && (
+            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium border border-amber-100">
+              {queueStats.waiting} ожидают
+            </span>
+          )}
+          {queueStats.done > 0 && (
+            <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium border border-emerald-100">
+              {queueStats.done} завершено
+            </span>
+          )}
+          {queueStats.total === 0 && (
+            <span className="text-xs text-gray-400">Записей нет</span>
+          )}
         </div>
       </div>
 
