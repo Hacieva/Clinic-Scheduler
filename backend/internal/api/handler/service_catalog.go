@@ -18,7 +18,7 @@ func NewServiceCatalogHandler(svc *service.ServiceCatalogService) *ServiceCatalo
 }
 
 type catalogServiceRequest struct {
-	DirectionID     int64   `json:"direction_id"`
+	DirectionID     *int64  `json:"direction_id"` // optional
 	Category        *string `json:"category"`
 	Name            string  `json:"name"`
 	Description     *string `json:"description"`
@@ -43,8 +43,8 @@ func (h *ServiceCatalogHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.Name == "" || req.DirectionID == 0 || req.DurationMinutes <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, direction_id and duration_minutes are required"})
+	if req.Name == "" || req.DurationMinutes <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and duration_minutes are required"})
 		return
 	}
 	svc, err := h.svc.Create(r.Context(), service.CatalogServiceInput{
@@ -72,8 +72,8 @@ func (h *ServiceCatalogHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.Name == "" || req.DirectionID == 0 || req.DurationMinutes <= 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name, direction_id and duration_minutes are required"})
+	if req.Name == "" || req.DurationMinutes <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and duration_minutes are required"})
 		return
 	}
 	svc, err := h.svc.Update(r.Context(), id, service.CatalogServiceInput{

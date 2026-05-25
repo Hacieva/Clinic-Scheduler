@@ -24,6 +24,7 @@ import WalkInPage from './pages/admin/cashbox/WalkInPage'
 import ReportsPage from './pages/admin/ReportsPage'
 import CrmPage from './pages/admin/CrmPage'
 import ServicesPage from './pages/admin/ServicesPage'
+import ReferrersPage from './pages/admin/ReferrersPage'
 
 export default function App() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/admin/reports" element={<ReportsPage />} />
             <Route path="/admin/crm" element={<CrmPage />} />
             <Route path="/admin/services" element={<ServicesPage />} />
+            <Route path="/admin/referrers" element={<ReferrersPage />} />
 
             {/* Redirect old bookmarks */}
             <Route path="/admin/directions" element={<Navigate to="/admin/settings/directions" replace />} />

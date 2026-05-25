@@ -76,7 +76,7 @@ func handlerInt64Ptr(v int64) *int64 { return &v }
 func sampleServiceRow() *model.Service {
 	price := int64(150000)
 	return &model.Service{
-		ID: 1, DoctorID: handlerInt64Ptr(1), DirectionID: 1, Name: "Consultation",
+		ID: 1, DoctorID: handlerInt64Ptr(1), DirectionID: handlerInt64Ptr(1), Name: "Consultation",
 		DurationMinutes: 30, Price: &price,
 		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}

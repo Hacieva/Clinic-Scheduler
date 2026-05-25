@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen, Users, Stethoscope, ClipboardList, LogOut, CalendarDays, UserRound,
   LayoutDashboard, Settings, Building2, UserCog, Plug2, Tag, FlaskConical,
-  ChevronDown, BarChart3,
+  ChevronDown, BarChart3, ExternalLink,
 } from 'lucide-react'
 import useAuthStore from '../stores/auth'
 import useBranchStore from '../stores/branch'
@@ -28,9 +28,10 @@ const SETTINGS_NAV = [
   { to: '/admin/settings/clinic',       label: 'Клиника',       icon: Stethoscope },
   { to: '/admin/settings/branches',     label: 'Филиалы',       icon: Building2 },
   { to: '/admin/settings/users',        label: 'Пользователи',  icon: UserCog },
-  { to: '/admin/settings/directions',   label: 'Направления',   icon: BookOpen },
+  { to: '/admin/settings/directions',   label: 'Специализации', icon: BookOpen },
   { to: '/admin/settings/integrations', label: 'Интеграции',    icon: Plug2 },
   { to: '/admin/settings/lab',          label: 'Лаборатория',   icon: FlaskConical },
+  { to: '/admin/referrers',             label: 'Направители',   icon: ExternalLink },
 ]
 
 const DOCTOR_NAV = [

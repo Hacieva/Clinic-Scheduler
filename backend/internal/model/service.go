@@ -9,7 +9,7 @@ import "time"
 type Service struct {
 	ID              int64     `json:"id"`
 	DoctorID        *int64    `json:"doctor_id"` // TODO: legacy; nil for global-catalog services
-	DirectionID     int64     `json:"direction_id"`
+	DirectionID     *int64    `json:"direction_id"` // nullable — directions optional for catalog services
 	Category        *string   `json:"category"`
 	Name            string    `json:"name"`
 	Description     *string   `json:"description"`

@@ -106,6 +106,11 @@ func (s *AppointmentService) Create(ctx context.Context, input CreateAppointment
 
 	endAt := input.StartAt.Add(time.Duration(svc.DurationMinutes) * time.Minute)
 
+	var directionID int64
+	if svc.DirectionID != nil {
+		directionID = *svc.DirectionID
+	}
+
 	return s.repo.Create(ctx, repository.CreateAppointmentInput{
 		PatientTelegramID:       input.PatientTelegramID,
 		PatientTelegramUsername: input.PatientTelegramUsername,
@@ -113,7 +118,7 @@ func (s *AppointmentService) Create(ctx context.Context, input CreateAppointment
 		PatientPhone:            input.PatientPhone,
 		DoctorID:                input.DoctorID,
 		ServiceID:               input.ServiceID,
-		DirectionID:             svc.DirectionID,
+		DirectionID:             directionID,
 		StartAt:                 input.StartAt,
 		EndAt:                   endAt,
 		Source:                  input.Source,

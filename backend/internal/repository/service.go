@@ -26,7 +26,7 @@ type ServiceRepository interface {
 type CreateServiceInput struct {
 	// TODO: legacy — nil for global-catalog services; kept for bot backward compat.
 	DoctorID        *int64
-	DirectionID     int64
+	DirectionID     *int64 // optional — catalog services may omit direction grouping
 	Category        *string
 	Name            string
 	Description     *string
@@ -35,7 +35,7 @@ type CreateServiceInput struct {
 }
 
 type UpdateServiceInput struct {
-	DirectionID     int64
+	DirectionID     *int64 // optional
 	Category        *string
 	Name            string
 	Description     *string

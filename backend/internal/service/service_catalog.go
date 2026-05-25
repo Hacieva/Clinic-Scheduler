@@ -19,7 +19,7 @@ func NewServiceCatalogService(repo repository.ServiceRepository) *ServiceCatalog
 
 // CatalogServiceInput carries fields for creating or updating a catalog service.
 type CatalogServiceInput struct {
-	DirectionID     int64
+	DirectionID     *int64 // optional — specialisation grouping
 	Category        *string
 	Name            string
 	Description     *string

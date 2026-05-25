@@ -23,8 +23,8 @@ const GROUPS = [
       {
         to: '/admin/settings/directions',
         icon: BookOpen,
-        label: 'Направления',
-        desc: 'Специализации врачей',
+        label: 'Специализации',
+        desc: 'Медицинские специализации врачей',
       },
     ],
   },

@@ -90,7 +90,7 @@ func sampleAdminDetailWithStatus(status model.AppointmentStatus) *repository.App
 
 func activeSvcForAppt() *model.Service {
 	return &model.Service{
-		ID: 1, DoctorID: handlerInt64Ptr(1), DirectionID: 1,
+		ID: 1, DoctorID: handlerInt64Ptr(1), DirectionID: handlerInt64Ptr(1),
 		Name: "Consultation", DurationMinutes: 30,
 		IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}

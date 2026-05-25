@@ -9,7 +9,7 @@ import {
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import {
-  ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX, Users,
+  ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX, Users, Search,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AppointmentGrid from '../../components/AppointmentGrid'
@@ -499,6 +499,7 @@ export default function ScheduleGridPage() {
 
   // Left panel filter state: null = all visible
   const [checkedDoctorIds, setCheckedDoctorIds] = useState(null)
+  const [specFilter, setSpecFilter] = useState('')
 
   // Modal state
   const [selectedAppt, setSelectedAppt] = useState(null)
@@ -514,21 +515,47 @@ export default function ScheduleGridPage() {
   })
   const activeDoctors = useMemo(() => allDoctors.filter((d) => d.is_active), [allDoctors])
 
-  // Visible doctor IDs: null = all, otherwise the checked set
+  // Unique specializations derived from active doctors' directions
+  const uniqueSpecs = useMemo(() => {
+    const set = new Set()
+    activeDoctors.forEach((d) => (d.directions ?? []).forEach((dir) => set.add(dir.name)))
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [activeDoctors])
+
+  // Doctors shown in the panel (filtered by specialty)
+  const panelDoctors = useMemo(() => {
+    if (!specFilter) return activeDoctors
+    return activeDoctors.filter((d) =>
+      (d.directions ?? []).some((dir) => dir.name === specFilter)
+    )
+  }, [activeDoctors, specFilter])
+
+  // Reset checkbox state when specialty filter changes
+  useEffect(() => { setCheckedDoctorIds(null) }, [specFilter])
+
+  // Visible doctor IDs for the grid: apply spec filter first, then checkbox filter
   const visibleDoctorIds = useMemo(() => {
-    if (checkedDoctorIds === null) return null
-    return checkedDoctorIds.length === 0 ? activeDoctors.map((d) => d.id) : checkedDoctorIds
-  }, [checkedDoctorIds, activeDoctors])
+    const panelIds = panelDoctors.map((d) => d.id)
+    if (!specFilter && checkedDoctorIds === null) return null
+    if (!specFilter) {
+      return checkedDoctorIds.length === 0 ? activeDoctors.map((d) => d.id) : checkedDoctorIds
+    }
+    if (checkedDoctorIds === null) return panelIds
+    const intersection = checkedDoctorIds.filter((id) => panelIds.includes(id))
+    return intersection.length > 0 ? intersection : panelIds
+  }, [checkedDoctorIds, activeDoctors, panelDoctors, specFilter])
 
   const toggleDoctor = (id) => {
     setCheckedDoctorIds((prev) => {
-      const set = prev ?? activeDoctors.map((d) => d.id)
+      const set = prev ?? panelDoctors.map((d) => d.id)
       return set.includes(id) ? set.filter((x) => x !== id) : [...set, id]
     })
   }
 
-  const allChecked = checkedDoctorIds === null || checkedDoctorIds.length === activeDoctors.length
-  const toggleAll = () => setCheckedDoctorIds(allChecked ? [] : null)
+  const allPanelChecked =
+    checkedDoctorIds === null ||
+    panelDoctors.every((d) => (checkedDoctorIds ?? []).includes(d.id))
+  const toggleAll = () => setCheckedDoctorIds(allPanelChecked ? [] : null)
 
   // ── Services for create form ──
   const { data: createServices = [] } = useQuery({
@@ -644,6 +671,25 @@ export default function ScheduleGridPage() {
           <MiniCalendar selected={date} onChange={setDate} />
         </div>
 
+        {/* Specialty filter */}
+        {uniqueSpecs.length > 0 && (
+          <div className="border-t border-gray-100 pt-2 px-3">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+              Специализация
+            </p>
+            <select
+              value={specFilter}
+              onChange={(e) => setSpecFilter(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              <option value="">Все специализации</option>
+              {uniqueSpecs.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Doctor filter */}
         {activeDoctors.length > 0 && (
           <div className="border-t border-gray-100 pt-3 flex-1">
@@ -655,11 +701,11 @@ export default function ScheduleGridPage() {
                 onClick={toggleAll}
                 className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
               >
-                {allChecked ? 'Снять все' : 'Все'}
+                {allPanelChecked ? 'Снять все' : 'Все'}
               </button>
             </div>
             <div className="px-2 space-y-0.5">
-              {activeDoctors.map((d) => {
+              {panelDoctors.map((d) => {
                 const checked =
                   checkedDoctorIds === null || checkedDoctorIds.includes(d.id)
                 const name = [d.last_name, d.first_name].filter(Boolean).join(' ')
@@ -684,9 +730,29 @@ export default function ScheduleGridPage() {
                   </label>
                 )
               })}
+              {panelDoctors.length === 0 && (
+                <p className="text-xs text-gray-400 px-1 py-1">Нет сотрудников</p>
+              )}
             </div>
           </div>
         )}
+
+        {/* Patient quick search */}
+        <div className="border-t border-gray-100 pt-2 pb-2 px-3">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Пациент
+          </p>
+          <div className="relative">
+            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="ФИО или телефон…"
+              className="w-full pl-6 pr-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
+              readOnly
+              title="Поиск пациентов появится в v0.3"
+            />
+          </div>
+        </div>
       </aside>
 
       {/* ── Main area ── */}
@@ -714,9 +780,11 @@ export default function ScheduleGridPage() {
           </span>
 
           {/* Filter indicator */}
-          {checkedDoctorIds !== null && checkedDoctorIds.length < activeDoctors.length && (
+          {(specFilter || (checkedDoctorIds !== null && checkedDoctorIds.length < activeDoctors.length)) && (
             <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
-              {checkedDoctorIds.length} из {activeDoctors.length}
+              {specFilter
+                ? `${panelDoctors.length} сотр.`
+                : `${checkedDoctorIds.length} из ${activeDoctors.length}`}
             </span>
           )}
 

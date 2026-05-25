@@ -486,7 +486,7 @@ export default function DoctorsPage() {
             onChange={(e) => setFilterDirId(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
           >
-            <option value="">Все специальности</option>
+            <option value="">Все специализации</option>
             {activeDirections.map((d) => (
               <option key={d.id} value={String(d.id)}>
                 {d.name}

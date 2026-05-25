@@ -1,21 +1,19 @@
 import { useState } from 'react'
 import {
-  BarChart3, Users, Stethoscope, UserRound, ShieldCheck,
-  FlaskConical, CreditCard, UserCheck, TrendingUp, CalendarX2,
+  BarChart3, Users, FlaskConical, CreditCard, TrendingUp, CalendarX2,
+  ShieldCheck, ExternalLink, DollarSign,
 } from 'lucide-react'
 
 const CHIPS = [
-  { key: 'services_done', label: 'Выполненные услуги',       icon: Stethoscope,  color: 'blue' },
-  { key: 'by_doctor',     label: 'По врачам',                 icon: Users,        color: 'violet' },
-  { key: 'by_service',    label: 'По услугам',                icon: BarChart3,    color: 'emerald' },
-  { key: 'by_patient',    label: 'По пациентам',              icon: UserRound,    color: 'amber' },
-  { key: 'by_admin',      label: 'По администраторам',        icon: ShieldCheck,  color: 'gray' },
-  { key: 'lab',           label: 'Лаборатория',               icon: FlaskConical, color: 'cyan' },
-  { key: 'cashbox',       label: 'Касса',                     icon: CreditCard,   color: 'emerald' },
-  { key: 'sources',       label: 'Источники пациентов',       icon: UserCheck,    color: 'blue' },
-  { key: 'referrers',     label: 'Направившие специалисты',   icon: TrendingUp,   color: 'violet' },
-  { key: 'avg_check',     label: 'Средний чек',               icon: TrendingUp,   color: 'amber' },
-  { key: 'visits',        label: 'Записи / отмены / неявки',  icon: CalendarX2,   color: 'red' },
+  { key: 'by_doctor',     label: 'По врачам',                  icon: Users,        color: 'blue' },
+  { key: 'by_service',    label: 'По услугам',                  icon: BarChart3,    color: 'emerald' },
+  { key: 'lab',           label: 'По лаборатории',              icon: FlaskConical, color: 'cyan' },
+  { key: 'referrers',     label: 'По внешним направителям',     icon: ExternalLink, color: 'violet' },
+  { key: 'payouts',       label: 'Кому сколько выплатить',      icon: DollarSign,   color: 'amber' },
+  { key: 'by_admin',      label: 'По администраторам',          icon: ShieldCheck,  color: 'gray' },
+  { key: 'cashbox',       label: 'Касса',                       icon: CreditCard,   color: 'emerald' },
+  { key: 'avg_check',     label: 'Средний чек',                 icon: TrendingUp,   color: 'amber' },
+  { key: 'visits',        label: 'Записи / отмены / неявки',    icon: CalendarX2,   color: 'red' },
 ]
 
 const CHIP_STYLE = {

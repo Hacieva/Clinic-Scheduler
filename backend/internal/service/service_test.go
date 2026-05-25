@@ -102,7 +102,7 @@ func sampleSvcInput() ServiceInput {
 func TestMedicalServiceList_Success(t *testing.T) {
 	price := int64(150000)
 	svcs := []model.Service{{
-		ID: 1, DoctorID: int64Ptr(1), DirectionID: 1, Name: "Consultation",
+		ID: 1, DoctorID: int64Ptr(1), DirectionID: int64Ptr(1), Name: "Consultation",
 		DurationMinutes: 30, Price: &price, IsActive: true,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}}
@@ -126,7 +126,7 @@ func TestMedicalServiceList_Empty(t *testing.T) {
 
 func TestMedicalServiceGetByID_Success(t *testing.T) {
 	s := &model.Service{
-		ID: 1, DoctorID: int64Ptr(1), DirectionID: 1, Name: "Consultation",
+		ID: 1, DoctorID: int64Ptr(1), DirectionID: int64Ptr(1), Name: "Consultation",
 		DurationMinutes: 30, IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	svc := NewMedicalServiceService(&mockServiceRepo{svc: s}, &mockDoctorRepo{})

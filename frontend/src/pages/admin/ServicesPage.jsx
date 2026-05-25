@@ -6,18 +6,15 @@ import { z } from 'zod'
 import { Plus, Pencil, Trash2, ChevronRight, ChevronDown, Search, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getAllServices, createService, updateService, deleteService } from '../../api/services'
-import { getDirections } from '../../api/directions'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Badge from '../../components/Badge'
 
 const schema = z.object({
-  direction_id: z
-    .number({ invalid_type_error: 'Выберите направление' })
-    .positive('Выберите направление'),
   category: z.string().optional(),
   name: z.string().min(1, 'Введите название'),
   description: z.string().optional(),
+  code: z.string().optional(),
   duration_minutes: z
     .number({ invalid_type_error: 'Введите число минут' })
     .min(30, 'Минимум 30 минут')
@@ -37,7 +34,7 @@ function fmtPrice(kopecks) {
   return `${(kopecks / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0 })} ₽`
 }
 
-function ServiceForm({ directions, defaultValues, onSubmit, isLoading }) {
+function ServiceForm({ defaultValues, onSubmit, isLoading }) {
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues,
@@ -47,23 +44,6 @@ function ServiceForm({ directions, defaultValues, onSubmit, isLoading }) {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Направление <span className="text-red-500">*</span>
-          </label>
-          <select
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            {...register('direction_id', { valueAsNumber: true })}
-          >
-            <option value="">Выберите</option>
-            {directions.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-          {errors.direction_id && (
-            <p className="mt-1 text-xs text-red-600">{errors.direction_id.message}</p>
-          )}
-        </div>
-        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Категория</label>
           <input
             type="text"
@@ -71,6 +51,17 @@ function ServiceForm({ directions, defaultValues, onSubmit, isLoading }) {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             {...register('category')}
           />
+          <p className="mt-0.5 text-xs text-gray-400">Группирует услуги в каталоге</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Код услуги</label>
+          <input
+            type="text"
+            placeholder="A01.001"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {...register('code')}
+          />
+          <p className="mt-0.5 text-xs text-gray-400">Необязательно</p>
         </div>
       </div>
 
@@ -213,20 +204,16 @@ export default function ServicesPage() {
     queryFn: () => getAllServices(!showInactive),
   })
 
-  const { data: directions = [] } = useQuery({
-    queryKey: ['directions'],
-    queryFn: getDirections,
-  })
-
   const invalidate = () => qc.invalidateQueries({ queryKey: ['catalog-services'] })
 
+  const buildPayload = ({ price_rub, category, code, ...rest }) => ({
+    ...rest,
+    ...(category ? { category } : {}),
+    ...(price_rub ? { price: toKopecks(price_rub) } : {}),
+  })
+
   const createMut = useMutation({
-    mutationFn: ({ price_rub, category, ...rest }) =>
-      createService({
-        ...rest,
-        ...(category ? { category } : {}),
-        ...(price_rub ? { price: toKopecks(price_rub) } : {}),
-      }),
+    mutationFn: (data) => createService(buildPayload(data)),
     onSuccess: () => {
       invalidate()
       setCreateOpen(false)
@@ -236,12 +223,7 @@ export default function ServicesPage() {
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ price_rub, category, ...rest }) =>
-      updateService(editTarget.id, {
-        ...rest,
-        ...(category ? { category } : {}),
-        ...(price_rub ? { price: toKopecks(price_rub) } : {}),
-      }),
+    mutationFn: (data) => updateService(editTarget.id, buildPayload(data)),
     onSuccess: () => {
       invalidate()
       setEditTarget(null)
@@ -287,10 +269,10 @@ export default function ServicesPage() {
 
   const editDefaults = editTarget
     ? {
-        direction_id: editTarget.direction_id,
         category: editTarget.category ?? '',
         name: editTarget.name,
         description: editTarget.description ?? '',
+        code: '',
         duration_minutes: editTarget.duration_minutes,
         price_rub: editTarget.price != null ? String(editTarget.price / 100) : '',
       }
@@ -380,7 +362,6 @@ export default function ServicesPage() {
 
       <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="Новая услуга">
         <ServiceForm
-          directions={directions}
           onSubmit={(data) => createMut.mutate(data)}
           isLoading={createMut.isPending}
         />
@@ -390,7 +371,6 @@ export default function ServicesPage() {
         {editTarget && (
           <ServiceForm
             key={editTarget.id}
-            directions={directions}
             defaultValues={editDefaults}
             onSubmit={(data) => updateMut.mutate(data)}
             isLoading={updateMut.isPending}

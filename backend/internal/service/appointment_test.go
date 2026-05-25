@@ -100,7 +100,7 @@ func activeSvc() *model.Service {
 	return &model.Service{
 		ID:              1,
 		DoctorID:        int64Ptr(1), // TODO: legacy field; assignment validated via doctorSvcRepo
-		DirectionID:     1,
+		DirectionID:     int64Ptr(1),
 		Name:            "Consultation",
 		DurationMinutes: 30,
 		IsActive:        true,
