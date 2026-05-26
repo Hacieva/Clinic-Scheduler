@@ -28,7 +28,7 @@ type Appointment struct {
 	PatientID      int64             `json:"patient_id"`
 	DoctorID       int64             `json:"doctor_id"`
 	ServiceID      int64             `json:"service_id"`
-	DirectionID    int64             `json:"direction_id"`
+	DirectionID    *int64            `json:"direction_id"`
 	StartAt        time.Time         `json:"start_at"`
 	EndAt          time.Time         `json:"end_at"`
 	Status         AppointmentStatus `json:"status"`

@@ -20,6 +20,252 @@
 Админ управляет врачами/услугами/расписанием → Telegram бот показывает свободные окна → Пациент записывается → Врач видит расписание.
 
 ---
+---
+
+# PRODUCT & UX RULES (CRITICAL)
+
+This system is NOT a generic admin dashboard.
+
+This project is a clinic operational MIS inspired by Medlock workflow logic.
+
+The most important thing in the system is NOT CRUD.
+The most important thing is registrar speed and clinic workflow usability.
+
+The UI must feel like a real clinic workspace.
+
+---
+
+## Core workflow
+
+The main workflow is:
+
+patient → doctor → service → time slot → appointment → payment → reporting
+
+The schedule grid is the heart of the system.
+
+Everything must optimize:
+- speed of patient registration
+- quick navigation
+- visibility of doctor workload
+- visibility of free slots
+- operational work during clinic hours
+
+---
+
+## UX priorities
+
+Priority order:
+
+1. Schedule / appointment workflow
+2. Patient flow
+3. Doctor workload visibility
+4. Fast registration
+5. Reports / analytics
+6. Settings
+
+Settings pages are secondary.
+The schedule is primary.
+
+---
+
+## Medlock-inspired behavior
+
+The project should follow operational UX patterns similar to Medlock.
+
+This means:
+
+- compact operational UI
+- dense information layout
+- minimal empty whitespace
+- fast filtering
+- quick schedule editing
+- clear current-time visibility
+- strong visual differentiation of states
+
+Do NOT build generic SaaS dashboards.
+
+---
+
+## Schedule grid requirements
+
+The schedule page is the core page of the system.
+
+### MUST HAVE
+
+- doctor columns
+- fixed visible timeline
+- current time indicator
+- past time visually dimmed
+- blocked/non-working hours visually disabled
+- hidden doctors on non-working days
+- fast doctor search
+- filtering by:
+  - specialization
+  - branch
+  - service
+  - doctor name
+- compact doctor headers
+- visible appointment cards
+- visual differentiation:
+  - booked
+  - completed
+  - cancelled
+  - live queue
+  - lunch break
+  - blocked time
+
+### MUST NOT
+
+- huge empty spaces
+- giant cards
+- long checkbox lists of doctors
+- placeholder-style layouts
+- generic calendar widgets without clinic workflow adaptation
+
+---
+
+## Schedule editing behavior
+
+Doctor schedule editing must support:
+
+- weekly templates
+- exceptions
+- interactive day editing
+- extending hours for a single day
+- blocking specific hours
+- lunch breaks
+- vacations/day off
+- emergency closure
+
+The registrar/admin must be able to click directly on schedule cells.
+
+Do not rely only on forms with checkboxes and time inputs.
+
+---
+
+## Patients page
+
+Patients page must support:
+
+- quick add patient
+- phone search
+- FIO search
+- filtering:
+  - gender
+  - age
+  - branch
+  - source
+  - doctor
+- visit history
+- quick appointment creation
+
+---
+
+## Services structure
+
+Services should be organized as:
+
+category → service → price → duration
+
+Avoid exposing technical entities that confuse clinic staff.
+
+Do not force users to understand internal database relationships.
+
+---
+
+## Specializations vs directions
+
+“Directions” as a technical entity should not dominate UI.
+
+Use:
+- specializations for doctors
+- categories for services
+
+If directions exist internally in DB logic, keep them hidden unless truly necessary.
+
+---
+
+## External referrers
+
+External referrers are important business entities.
+
+Referrers must support:
+
+- full name
+- specialization
+- workplace/LPU
+- phone
+- type
+- referral statistics
+- service commission %
+- lab commission %
+- exceptions per service/lab category
+- future payout reports
+
+This feature is business-critical.
+
+---
+
+## Reports
+
+Reports must reflect real clinic operations.
+
+Important reports:
+- by doctors
+- by services
+- by referrers
+- by branch
+- cash register
+- average bill
+- cancellations/no-shows
+- lab commissions
+- referral payouts
+
+Reports are not decorative widgets.
+
+---
+
+## UI philosophy
+
+The system should feel:
+- operational
+- compact
+- fast
+- clinic-oriented
+
+NOT:
+- marketing dashboard
+- startup SaaS admin panel
+- empty analytics template
+
+---
+
+## Before implementing UI
+
+Before any major UI implementation:
+
+1. inspect existing workflow
+2. compare with Medlock behavior
+3. explain workflow problems
+4. define acceptance criteria
+5. then implement
+
+Do not jump directly into coding.
+
+---
+
+## Definition of done for UI tasks
+
+A UI task is NOT done unless:
+
+- workflow can be completed quickly
+- registrar can understand interface without explanation
+- layout scales to many doctors/patients
+- page works with realistic clinic load
+- visual hierarchy is clear
+- Playwright visual verification is performed
+
+---
 
 ## 2. Главные бизнес-правила (НЕЛЬЗЯ нарушать)
 

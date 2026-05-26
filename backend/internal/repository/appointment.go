@@ -31,7 +31,7 @@ type CreateAppointmentInput struct {
 	PatientPhone            string
 	DoctorID                int64
 	ServiceID               int64
-	DirectionID             int64
+	DirectionID             *int64
 	StartAt                 time.Time
 	EndAt                   time.Time
 	Source                  model.AppointmentSource

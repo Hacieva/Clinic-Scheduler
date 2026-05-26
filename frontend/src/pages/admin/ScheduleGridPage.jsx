@@ -11,6 +11,7 @@ import { ru } from 'date-fns/locale'
 import {
   ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX, Users, Search,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import AppointmentGrid from '../../components/AppointmentGrid'
 import Modal from '../../components/Modal'
@@ -18,8 +19,8 @@ import Badge from '../../components/Badge'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import useBranchStore from '../../stores/branch'
 import { getDoctors } from '../../api/doctors'
-import { getDoctorServices, getAllServices } from '../../api/services'
-import { getPatients } from '../../api/patients'
+import { getAllServices, getAssignedServices } from '../../api/services'
+import { getPatients, createPatient as apiCreatePatient } from '../../api/patients'
 import { getWorkingHours } from '../../api/schedule'
 import { getBranches } from '../../api/branches'
 import {
@@ -135,35 +136,41 @@ function MiniCalendar({ selected, onChange }) {
 // ─── CreateForm ───────────────────────────────────────────────────────────────
 
 const createSchema = z.object({
-  patient_name: z.string().min(1, 'Введите ФИО пациента'),
-  patient_phone: z.string().min(7, 'Введите номер телефона'),
-  doctor_id: z.string().min(1, 'Выберите врача'),
-  service_id: z.string().min(1, 'Выберите услугу'),
-  start_at: z.string().min(1, 'Укажите дату и время'),
+  patient_name:    z.string().min(1, 'Введите ФИО пациента'),
+  patient_phone:   z.string().min(7, 'Введите номер телефона'),
+  doctor_id:       z.string().min(1, 'Выберите врача'),
+  service_id:      z.string().min(1, 'Выберите услугу'),
+  start_at:        z.string().min(1, 'Укажите дату и время'),
   patient_comment: z.string().optional(),
 })
 
-function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, initialDoctorId, initialStartAt }) {
-  const {
-    register, handleSubmit, setValue, formState: { errors },
-  } = useForm({
+function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStartAt, onClose }) {
+  const navigate = useNavigate()
+  const qc       = useQueryClient()
+
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     resolver: zodResolver(createSchema),
     defaultValues: {
-      doctor_id: initialDoctorId ? String(initialDoctorId) : '',
-      service_id: '',
-      patient_name: '',
-      patient_phone: '',
-      start_at: initialStartAt ?? '',
+      doctor_id:       initialDoctorId ? String(initialDoctorId) : '',
+      service_id:      '',
+      patient_name:    '',
+      patient_phone:   '',
+      start_at:        initialStartAt ?? '',
       patient_comment: '',
     },
   })
 
-  const { onChange: rhfDoctorChange, ...restDoctor } = register('doctor_id')
-  const { ref: patientNameRef } = register('patient_name')
+  const watchedDoctorId = watch('doctor_id')
+
+  const { data: assignedServices = [], isFetching: servicesFetching } = useQuery({
+    queryKey: ['assigned-services', watchedDoctorId],
+    queryFn:  () => getAssignedServices(Number(watchedDoctorId)),
+    enabled:  !!watchedDoctorId,
+  })
 
   const [patientSearch, setPatientSearch] = useState('')
-  const [patientQuery, setPatientQuery] = useState('')
-  const [showDropdown, setShowDropdown] = useState(false)
+  const [patientQuery,  setPatientQuery]  = useState('')
+  const [showDropdown,  setShowDropdown]  = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const containerRef = useRef(null)
 
@@ -174,8 +181,8 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
 
   const { data: patientResults = [] } = useQuery({
     queryKey: ['patient-search', patientQuery],
-    queryFn: () => getPatients({ search: patientQuery, limit: 5 }),
-    enabled: patientQuery.trim().length >= 2,
+    queryFn:  () => getPatients({ search: patientQuery, limit: 5 }),
+    enabled:  patientQuery.trim().length >= 2,
   })
 
   useEffect(() => { setSelectedIndex(-1) }, [patientResults])
@@ -190,6 +197,25 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  const [showNewPatient, setShowNewPatient] = useState(false)
+  const [newName,  setNewName]  = useState('')
+  const [newPhone, setNewPhone] = useState('')
+
+  const newPatientMut = useMutation({
+    mutationFn: () => apiCreatePatient({ full_name: newName, phone: newPhone }),
+    onSuccess: (patient) => {
+      setValue('patient_name',  patient.full_name ?? '')
+      setValue('patient_phone', patient.phone ?? '')
+      setPatientSearch(patient.full_name ?? '')
+      setShowNewPatient(false)
+      setNewName('')
+      setNewPhone('')
+      qc.invalidateQueries({ queryKey: ['patient-search'] })
+      toast.success('Пациент создан')
+    },
+    onError: () => toast.error('Не удалось создать пациента'),
+  })
 
   const capitalizeWords = (val) => val.replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
 
@@ -226,126 +252,208 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
   }
 
   const selectPatient = (p) => {
-    setValue('patient_name', p.full_name ?? '')
+    setValue('patient_name',  p.full_name ?? '')
     setValue('patient_phone', p.phone ?? '')
     setPatientSearch(p.full_name ?? '')
     setShowDropdown(false)
     setSelectedIndex(-1)
   }
 
-  useEffect(() => {
-    if (initialDoctorId) onDoctorChange(String(initialDoctorId))
-  }, [initialDoctorId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const { ref: patientNameRef } = register('patient_name')
+  const { onChange: rhfDoctorChange, ...restDoctor } = register('doctor_id')
+
+  const selectedDoctor = doctors.find((d) => d.id === Number(initialDoctorId))
+  const doctorDisplayName = selectedDoctor
+    ? [selectedDoctor.last_name, selectedDoctor.first_name, selectedDoctor.middle_name]
+        .filter(Boolean).join(' ')
+    : ''
+
+  const noServicesAndSelected = !!watchedDoctorId && !servicesFetching && assignedServices.length === 0
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="relative" ref={containerRef}>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            ФИО пациента <span className="text-red-500">*</span>
+
+      {/* ── Patient ── */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-sm font-medium text-gray-700">
+            Пациент <span className="text-red-500">*</span>
           </label>
-          <input
-            ref={patientNameRef}
-            type="text"
-            value={patientSearch}
-            onChange={(e) => {
-              const val = capitalizeWords(e.target.value)
-              setPatientSearch(val)
-              setValue('patient_name', val)
-              setShowDropdown(true)
-            }}
-            onFocus={() => patientQuery.trim().length >= 2 && setShowDropdown(true)}
-            onKeyDown={handleKeyDown}
-            placeholder="Введите ФИО или телефон…"
-            autoComplete="off"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {showDropdown && patientResults.length > 0 && (
-            <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-              {patientResults.map((p, idx) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onMouseDown={() => selectPatient(p)}
-                  className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-b-0 transition-colors ${
-                    idx === selectedIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <span className="font-medium text-gray-900">
-                    {highlight(p.full_name, patientQuery)}
-                  </span>
-                  {p.phone && <span className="text-gray-400 ml-2 text-xs">{p.phone}</span>}
-                </button>
-              ))}
+          {!showNewPatient && (
+            <button
+              type="button"
+              onClick={() => setShowNewPatient(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              + Новый пациент
+            </button>
+          )}
+        </div>
+
+        {showNewPatient ? (
+          <div className="border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">Создать нового пациента</p>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(capitalizeWords(e.target.value))}
+              placeholder="ФИО *"
+              className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="tel"
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              placeholder="Телефон *"
+              className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => newPatientMut.mutate()}
+                disabled={!newName.trim() || !newPhone.trim() || newPatientMut.isPending}
+                className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 transition-colors"
+              >
+                {newPatientMut.isPending ? 'Создание…' : 'Создать и выбрать'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowNewPatient(false); setNewName(''); setNewPhone('') }}
+                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900"
+              >
+                Отмена
+              </button>
             </div>
-          )}
-          {errors.patient_name && (
-            <p className="mt-1 text-xs text-red-600">{errors.patient_name.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Телефон <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="tel"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            {...register('patient_phone')}
-          />
-          {errors.patient_phone && (
-            <p className="mt-1 text-xs text-red-600">{errors.patient_phone.message}</p>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="relative" ref={containerRef}>
+              <input
+                ref={patientNameRef}
+                type="text"
+                value={patientSearch}
+                onChange={(e) => {
+                  const val = capitalizeWords(e.target.value)
+                  setPatientSearch(val)
+                  setValue('patient_name', val)
+                  setShowDropdown(true)
+                }}
+                onFocus={() => patientQuery.trim().length >= 2 && setShowDropdown(true)}
+                onKeyDown={handleKeyDown}
+                placeholder="Введите ФИО или телефон…"
+                autoComplete="off"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {showDropdown && patientResults.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                  {patientResults.map((p, idx) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onMouseDown={() => selectPatient(p)}
+                      className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-b-0 transition-colors ${
+                        idx === selectedIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-medium text-gray-900">
+                        {highlight(p.full_name, patientQuery)}
+                      </span>
+                      {p.phone && <span className="text-gray-400 ml-2 text-xs">{p.phone}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <input
+                type="tel"
+                placeholder="Телефон *"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                {...register('patient_phone')}
+              />
+              {errors.patient_phone && (
+                <p className="mt-1 text-xs text-red-600">{errors.patient_phone.message}</p>
+              )}
+            </div>
+          </div>
+        )}
+        {!showNewPatient && errors.patient_name && (
+          <p className="mt-1 text-xs text-red-600">{errors.patient_name.message}</p>
+        )}
       </div>
 
+      {/* ── Doctor ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Врач <span className="text-red-500">*</span>
         </label>
-        <select
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          {...restDoctor}
-          onChange={(e) => {
-            rhfDoctorChange(e)
-            setValue('service_id', '')
-            onDoctorChange(e.target.value)
-          }}
-        >
-          <option value="">Выберите врача</option>
-          {doctors.map((d) => (
-            <option key={d.id} value={d.id}>
-              {[d.last_name, d.first_name, d.middle_name].filter(Boolean).join(' ')}
-            </option>
-          ))}
-        </select>
+        {initialDoctorId ? (
+          <>
+            <div className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 font-medium">
+              {doctorDisplayName || 'Врач не найден'}
+            </div>
+            <input type="hidden" {...restDoctor} />
+          </>
+        ) : (
+          <select
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {...restDoctor}
+            onChange={(e) => {
+              rhfDoctorChange(e)
+              setValue('service_id', '')
+            }}
+          >
+            <option value="">Выберите врача</option>
+            {doctors.map((d) => (
+              <option key={d.id} value={d.id}>
+                {[d.last_name, d.first_name, d.middle_name].filter(Boolean).join(' ')}
+              </option>
+            ))}
+          </select>
+        )}
         {errors.doctor_id && (
           <p className="mt-1 text-xs text-red-600">{errors.doctor_id.message}</p>
         )}
       </div>
 
+      {/* ── Service ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Услуга <span className="text-red-500">*</span>
         </label>
-        <select
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-          {...register('service_id')}
-          disabled={services.length === 0}
-        >
-          <option value="">
-            {services.length === 0 ? 'Сначала выберите врача' : 'Выберите услугу'}
-          </option>
-          {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.duration_minutes} мин)
+        {noServicesAndSelected ? (
+          <div className="flex items-center justify-between gap-3 p-3 border border-amber-200 bg-amber-50 rounded-lg">
+            <span className="text-sm text-amber-800">У врача нет привязанных услуг.</span>
+            <button
+              type="button"
+              onClick={() => { onClose?.(); navigate(`/admin/doctors/${watchedDoctorId}`) }}
+              className="shrink-0 text-xs font-medium text-blue-600 hover:text-blue-800 underline"
+            >
+              Настроить услуги
+            </button>
+          </div>
+        ) : (
+          <select
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+            {...register('service_id')}
+            disabled={!watchedDoctorId || servicesFetching}
+          >
+            <option value="">
+              {!watchedDoctorId ? 'Сначала выберите врача' : servicesFetching ? 'Загрузка…' : 'Выберите услугу'}
             </option>
-          ))}
-        </select>
-        {errors.service_id && (
+            {assignedServices.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.duration_minutes} мин)
+              </option>
+            ))}
+          </select>
+        )}
+        {!noServicesAndSelected && errors.service_id && (
           <p className="mt-1 text-xs text-red-600">{errors.service_id.message}</p>
         )}
       </div>
 
+      {/* ── Date/time ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Дата и время <span className="text-red-500">*</span>
@@ -361,6 +469,7 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
         <p className="mt-1 text-xs text-gray-400">Длительность рассчитывается по услуге</p>
       </div>
 
+      {/* ── Comment ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
         <input
@@ -373,7 +482,7 @@ function CreateForm({ doctors, services, onDoctorChange, onSubmit, isLoading, in
       <div className="flex justify-end pt-1">
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || noServicesAndSelected}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
         >
           {isLoading ? 'Создание…' : 'Создать запись'}
@@ -511,7 +620,6 @@ export default function ScheduleGridPage() {
   const [createModal,    setCreateModal]    = useState(null)
   const [cancelTarget,   setCancelTarget]   = useState(null)
   const [simpleAction,   setSimpleAction]   = useState(null)
-  const [createDoctorId, setCreateDoctorId] = useState('')
 
   // ── Doctor list (shared cache with AppointmentGrid) ──
   const { data: allDoctors = [] } = useQuery({
@@ -554,13 +662,6 @@ export default function ScheduleGridPage() {
         limit:     200,
         ...(activeBranchId ? { branch_id: activeBranchId } : {}),
       }),
-  })
-
-  // ── Services for create form ──
-  const { data: createServices = [] } = useQuery({
-    queryKey: ['services', createDoctorId],
-    queryFn: () => getDoctorServices(Number(createDoctorId)),
-    enabled: !!createDoctorId,
   })
 
   // ── Derived: unique specializations ──
@@ -676,7 +777,6 @@ export default function ScheduleGridPage() {
     onSuccess: () => {
       invalidateGrid()
       setCreateModal(null)
-      setCreateDoctorId('')
       toast.success('Запись создана')
     },
     onError: (err) => {
@@ -716,7 +816,6 @@ export default function ScheduleGridPage() {
   // ── Handlers ──
   const handleSlotClick = (doctorId, startTime) => {
     setCreateModal({ doctorId, startAt: `${format(date, 'yyyy-MM-dd')}T${startTime}` })
-    setCreateDoctorId(String(doctorId))
   }
 
   const handleEventClick      = (appt) => setSelectedAppt(appt)
@@ -738,7 +837,7 @@ export default function ScheduleGridPage() {
       patient_phone: data.patient_phone,
       doctor_id:     Number(data.doctor_id),
       service_id:    Number(data.service_id),
-      start_at:      new Date(data.start_at).toISOString(),
+      start_at:      `${data.start_at.slice(0, 16)}:00.000Z`,
       ...(data.patient_comment ? { patient_comment: data.patient_comment } : {}),
     })
   }
@@ -944,19 +1043,18 @@ export default function ScheduleGridPage() {
 
       <Modal
         isOpen={!!createModal}
-        onClose={() => { setCreateModal(null); setCreateDoctorId('') }}
+        onClose={() => setCreateModal(null)}
         title="Новая запись"
         maxWidth="max-w-lg"
       >
         {createModal && (
           <CreateForm
             doctors={activeDoctors}
-            services={createServices}
-            onDoctorChange={setCreateDoctorId}
             onSubmit={handleCreateSubmit}
             isLoading={createMut.isPending}
             initialDoctorId={createModal.doctorId}
             initialStartAt={createModal.startAt}
+            onClose={() => setCreateModal(null)}
           />
         )}
       </Modal>
