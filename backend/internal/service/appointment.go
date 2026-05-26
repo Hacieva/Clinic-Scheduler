@@ -4,16 +4,22 @@ import (
 	"context"
 	"time"
 
+	"github.com/Hacieva/clinic-scheduler/backend/internal/availability"
 	apperrors "github.com/Hacieva/clinic-scheduler/backend/internal/errors"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/model"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/repository"
 )
 
+// AppointmentScheduleChecker validates that a booking falls within working hours.
+// Satisfied by *repository.ScheduleRepo (duck-typed via availability.ScheduleRepository).
+type AppointmentScheduleChecker = availability.ScheduleRepository
+
 type AppointmentService struct {
-	repo          repository.AppointmentRepository
-	doctorRepo    repository.DoctorRepository
-	svcRepo       repository.ServiceRepository
-	doctorSvcRepo repository.DoctorServiceRepository
+	repo            repository.AppointmentRepository
+	doctorRepo      repository.DoctorRepository
+	svcRepo         repository.ServiceRepository
+	doctorSvcRepo   repository.DoctorServiceRepository
+	scheduleChecker AppointmentScheduleChecker
 }
 
 func NewAppointmentService(
@@ -21,12 +27,14 @@ func NewAppointmentService(
 	doctorRepo repository.DoctorRepository,
 	svcRepo repository.ServiceRepository,
 	doctorSvcRepo repository.DoctorServiceRepository,
+	scheduleChecker AppointmentScheduleChecker,
 ) *AppointmentService {
 	return &AppointmentService{
-		repo:          repo,
-		doctorRepo:    doctorRepo,
-		svcRepo:       svcRepo,
-		doctorSvcRepo: doctorSvcRepo,
+		repo:            repo,
+		doctorRepo:      doctorRepo,
+		svcRepo:         svcRepo,
+		doctorSvcRepo:   doctorSvcRepo,
+		scheduleChecker: scheduleChecker,
 	}
 }
 
@@ -106,6 +114,10 @@ func (s *AppointmentService) Create(ctx context.Context, input CreateAppointment
 
 	endAt := input.StartAt.Add(time.Duration(svc.DurationMinutes) * time.Minute)
 
+	if err := s.checkWorkingHours(ctx, input.DoctorID, input.StartAt, endAt); err != nil {
+		return nil, err
+	}
+
 	return s.repo.Create(ctx, repository.CreateAppointmentInput{
 		PatientTelegramID:       input.PatientTelegramID,
 		PatientTelegramUsername: input.PatientTelegramUsername,
@@ -171,4 +183,29 @@ func (s *AppointmentService) MarkNoShow(ctx context.Context, id int64, changedBy
 // GetDoctorIDByUserID resolves the doctor record for a given JWT user_id.
 func (s *AppointmentService) GetDoctorIDByUserID(ctx context.Context, userID int64) (int64, error) {
 	return s.doctorRepo.GetDoctorIDByUserID(ctx, userID)
+}
+
+// checkWorkingHours returns ErrOutsideHours when [startAt, endAt) does not fall
+// within any working interval for that doctor on startAt's calendar day.
+func (s *AppointmentService) checkWorkingHours(ctx context.Context, doctorID int64, startAt, endAt time.Time) error {
+	day := time.Date(startAt.Year(), startAt.Month(), startAt.Day(), 0, 0, 0, 0, startAt.Location())
+
+	schedule, err := s.scheduleChecker.GetWorkingHours(ctx, doctorID)
+	if err != nil {
+		return err
+	}
+
+	exceptions, err := s.scheduleChecker.GetScheduleExceptions(ctx, doctorID, day, day)
+	if err != nil {
+		return err
+	}
+
+	if !availability.IsWithinWorkingHours(startAt, endAt, availability.CalculatorInput{
+		Date:            day,
+		RegularSchedule: schedule,
+		Exceptions:      exceptions,
+	}) {
+		return apperrors.ErrOutsideHours
+	}
+	return nil
 }

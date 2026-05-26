@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format, parseISO, isToday } from 'date-fns'
-import { Users } from 'lucide-react'
+import { Users, MoreVertical } from 'lucide-react'
 import { getAppointments } from '../api/appointments'
 import { getDoctors } from '../api/doctors'
 
@@ -115,7 +115,7 @@ const HATCH = {
   backgroundColor: 'rgba(243,244,246,0.7)',
 }
 
-function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, workHours }) {
+function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, workHours, onDayAction, date }) {
   const appts = appointments.filter((a) => a.doctor_id === doctor.id)
   const [hoverSnap, setHoverSnap] = useState(null)
 
@@ -157,20 +157,32 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, wo
         />
       ))}
 
-      {/* Pre-work blocked zone */}
+      {/* Pre-work blocked zone — clickable to manage schedule */}
       {preBlockH > 0 && (
         <div
-          className="absolute inset-x-0 top-0 pointer-events-none"
+          className="absolute inset-x-0 top-0 cursor-pointer hover:brightness-95 transition-colors group"
           style={{ height: `${preBlockH}px`, zIndex: 6, ...HATCH }}
-        />
+          onClick={(e) => { e.stopPropagation(); onDayAction?.({ doctorId: doctor.id, doctor, date }) }}
+          title="Управление расписанием"
+        >
+          <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-white/80 px-1.5 py-0.5 rounded-sm shadow-sm">
+            Нажмите для управления
+          </span>
+        </div>
       )}
 
-      {/* Post-work blocked zone */}
+      {/* Post-work blocked zone — clickable to manage schedule */}
       {postBlockTop < GRID_H && (
         <div
-          className="absolute inset-x-0 pointer-events-none"
+          className="absolute inset-x-0 cursor-pointer hover:brightness-95 transition-colors group"
           style={{ top: `${postBlockTop}px`, bottom: 0, zIndex: 6, ...HATCH }}
-        />
+          onClick={(e) => { e.stopPropagation(); onDayAction?.({ doctorId: doctor.id, doctor, date }) }}
+          title="Управление расписанием"
+        >
+          <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[9px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-white/80 px-1.5 py-0.5 rounded-sm shadow-sm">
+            Нажмите для управления
+          </span>
+        </div>
       )}
 
       {/* Past-time overlay (today only) */}
@@ -245,7 +257,7 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, wo
 // ─── AppointmentGrid ──────────────────────────────────────────────────────────
 
 export default function AppointmentGrid({
-  date, branchId, onEventClick, onSlotClick, visibleDoctorIds, workingHoursMap,
+  date, branchId, onEventClick, onSlotClick, visibleDoctorIds, workingHoursMap, onDayAction,
 }) {
   const dateStr      = format(date, 'yyyy-MM-dd')
   const viewingToday = isToday(date)
@@ -340,7 +352,7 @@ export default function AppointmentGrid({
                 className="relative border-r border-gray-100 last:border-r-0 overflow-hidden"
                 style={{ minWidth: `${MIN_COL_W}px`, flex: '1 0 0' }}
               >
-                <div className="px-3 py-2 flex items-center gap-2">
+                <div className="px-2 py-2 flex items-center gap-2">
                   <div className={`w-6 h-6 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
                     {(d.last_name ?? d.first_name ?? '?')[0]}
                   </div>
@@ -363,6 +375,17 @@ export default function AppointmentGrid({
                       )}
                     </div>
                   </div>
+                  {/* Quick day-action button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDayAction?.({ doctorId: d.id, doctor: d, date })
+                    }}
+                    className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-300 hover:text-gray-600 transition-colors"
+                    title="Управление расписанием врача"
+                  >
+                    <MoreVertical size={13} />
+                  </button>
                 </div>
                 {/* Doctor load bar */}
                 {loadPct > 0 && (
@@ -416,6 +439,8 @@ export default function AppointmentGrid({
               onSlotClick={onSlotClick}
               nowTop={nowTop}
               workHours={workingHoursMap?.get(d.id)}
+              onDayAction={onDayAction}
+              date={date}
             />
           ))}
 

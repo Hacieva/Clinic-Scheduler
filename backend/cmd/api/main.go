@@ -97,7 +97,7 @@ func main() {
 	patientHandler := handler.NewPatientHandler(patientSvc)
 
 	apptRepo := repository.NewAppointmentRepo(pool)
-	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo, doctorSvcRepo)
+	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo, doctorSvcRepo, scheduleRepo)
 	apptHandler := handler.NewAppointmentHandler(apptSvc)
 
 	r := chi.NewRouter()

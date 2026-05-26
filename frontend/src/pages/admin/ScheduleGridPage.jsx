@@ -10,6 +10,7 @@ import {
 import { ru } from 'date-fns/locale'
 import {
   ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX, Users, Search,
+  Clock, XCircle, Sun, Coffee,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -21,7 +22,7 @@ import useBranchStore from '../../stores/branch'
 import { getDoctors } from '../../api/doctors'
 import { getAllServices, getAssignedServices } from '../../api/services'
 import { getPatients, createPatient as apiCreatePatient } from '../../api/patients'
-import { getWorkingHours } from '../../api/schedule'
+import { getWorkingHours, createException } from '../../api/schedule'
 import { getBranches } from '../../api/branches'
 import {
   getAppointments,
@@ -53,6 +54,16 @@ const STATUS_VARIANTS = {
 }
 
 const TERMINAL = new Set(['cancelled_by_admin', 'cancelled_by_patient', 'completed', 'no_show'])
+
+// Hatch style for legend chip (mirrors AppointmentGrid HATCH)
+const LEGEND_HATCH = {
+  backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(107,114,128,0.12) 3px, rgba(107,114,128,0.12) 6px)',
+  backgroundColor: 'rgba(243,244,246,0.8)',
+}
+
+function minsToHHMM(m) {
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
 
 const AVATAR_COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-violet-500',
@@ -601,6 +612,122 @@ function EventDetailModal({ appt, onClose, onConfirm, onCancel, onComplete, onNo
   )
 }
 
+// ─── DayActionMenu ────────────────────────────────────────────────────────────
+
+function DayActionMenu({ target, onClose, onApply, isLoading }) {
+  const [extStart, setExtStart] = useState('08:00')
+  const [extEnd,   setExtEnd]   = useState('21:00')
+  const [showExtend, setShowExtend] = useState(false)
+
+  useEffect(() => {
+    if (target?.workHours) {
+      setExtStart(minsToHHMM(target.workHours.startMin))
+      setExtEnd(minsToHHMM(target.workHours.endMin))
+    } else {
+      setExtStart('08:00')
+      setExtEnd('21:00')
+    }
+    setShowExtend(false)
+  }, [target])
+
+  if (!target) return null
+
+  const doctorName = [target.doctor?.last_name, target.doctor?.first_name]
+    .filter(Boolean).join(' ')
+  const dateLabel = format(target.date, 'dd.MM.yyyy')
+
+  return (
+    <Modal isOpen={!!target} onClose={onClose} title="Управление расписанием" maxWidth="max-w-sm">
+      <div className="space-y-2">
+        <p className="text-sm text-gray-500 mb-3">
+          <span className="font-medium text-gray-800">{doctorName}</span> — {dateLabel}
+        </p>
+
+        {/* Close day */}
+        <button
+          onClick={() => onApply('close_day')}
+          disabled={isLoading}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-left border border-gray-100 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <XCircle size={16} className="shrink-0 text-rose-400" />
+          <div>
+            <div className="font-medium">Закрыть день</div>
+            <div className="text-xs text-gray-400">Пометить как выходной на эту дату</div>
+          </div>
+        </button>
+
+        {/* Extend hours */}
+        <div className="border border-gray-100 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowExtend((s) => !s)}
+            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-blue-50 transition-colors"
+          >
+            <Clock size={16} className="shrink-0 text-blue-400" />
+            <div className="flex-1">
+              <div className="font-medium text-gray-800">Расширить рабочие часы</div>
+              <div className="text-xs text-gray-400">Особое расписание на этот день</div>
+            </div>
+            <ChevronRight size={13} className={`text-gray-400 transition-transform ${showExtend ? 'rotate-90' : ''}`} />
+          </button>
+          {showExtend && (
+            <div className="px-4 pb-3 pt-2 border-t border-gray-100 bg-gray-50 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="text-[10px] text-gray-500 block mb-1">Начало</label>
+                  <input
+                    type="time"
+                    value={extStart}
+                    onChange={(e) => setExtStart(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-gray-500 block mb-1">Конец</label>
+                  <input
+                    type="time"
+                    value={extEnd}
+                    onChange={(e) => setExtEnd(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => onApply('extend', { start: extStart, end: extEnd })}
+                disabled={isLoading || !extStart || !extEnd}
+                className="w-full px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-60 transition-colors"
+              >
+                {isLoading ? 'Применение…' : 'Применить'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Vacation / day off */}
+        <button
+          onClick={() => onApply('vacation')}
+          disabled={isLoading}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-left border border-gray-100 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <Sun size={16} className="shrink-0 text-amber-400" />
+          <div>
+            <div className="font-medium">Отпуск / плановый выходной</div>
+            <div className="text-xs text-gray-400">Отметить день как нерабочий</div>
+          </div>
+        </button>
+
+        {/* Break — not supported by API */}
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm border border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed select-none">
+          <Coffee size={16} className="shrink-0 text-gray-400" />
+          <div>
+            <div className="font-medium text-gray-500">Добавить перерыв / обед</div>
+            <div className="text-xs text-gray-400">Недоступно: API не поддерживает блоки перерывов</div>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 // ─── ScheduleGridPage ─────────────────────────────────────────────────────────
 
 export default function ScheduleGridPage() {
@@ -616,10 +743,11 @@ export default function ScheduleGridPage() {
   const [serviceFilter,    setServiceFilter]    = useState('')
 
   // Modal state
-  const [selectedAppt,   setSelectedAppt]   = useState(null)
-  const [createModal,    setCreateModal]    = useState(null)
-  const [cancelTarget,   setCancelTarget]   = useState(null)
-  const [simpleAction,   setSimpleAction]   = useState(null)
+  const [selectedAppt,    setSelectedAppt]    = useState(null)
+  const [createModal,     setCreateModal]     = useState(null)
+  const [cancelTarget,    setCancelTarget]    = useState(null)
+  const [simpleAction,    setSimpleAction]    = useState(null)
+  const [dayActionTarget, setDayActionTarget] = useState(null)
 
   // ── Doctor list (shared cache with AppointmentGrid) ──
   const { data: allDoctors = [] } = useQuery({
@@ -813,7 +941,39 @@ export default function ScheduleGridPage() {
     onError: () => toast.error('Не удалось обновить статус.'),
   })
 
+  const createExcMut = useMutation({
+    mutationFn: ({ doctorId, data }) => createException(doctorId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['doctor-working-hours'] })
+      setDayActionTarget(null)
+      toast.success('Расписание обновлено')
+    },
+    onError: (err) => {
+      if (err?.response?.status === 409) toast.error('Исключение на эту дату уже существует')
+      else toast.error('Не удалось обновить расписание')
+    },
+  })
+
   // ── Handlers ──
+  const handleDayAction = ({ doctorId, doctor, date: actionDate }) => {
+    const wh = workingHoursMap.get(doctorId)
+    setDayActionTarget({ doctorId, doctor, date: actionDate, workHours: wh })
+  }
+
+  const handleDayApply = (action, opts) => {
+    if (!dayActionTarget) return
+    const { doctorId } = dayActionTarget
+    const ds = format(dayActionTarget.date, 'yyyy-MM-dd')
+    if (action === 'close_day' || action === 'vacation') {
+      createExcMut.mutate({ doctorId, data: { date: ds, type: 'day_off' } })
+    } else if (action === 'extend' && opts) {
+      createExcMut.mutate({
+        doctorId,
+        data: { date: ds, type: 'custom_working_hours', start_time: opts.start, end_time: opts.end },
+      })
+    }
+  }
+
   const handleSlotClick = (doctorId, startTime) => {
     setCreateModal({ doctorId, startAt: `${format(date, 'yyyy-MM-dd')}T${startTime}` })
   }
@@ -1005,28 +1165,76 @@ export default function ScheduleGridPage() {
           onSlotClick={handleSlotClick}
           visibleDoctorIds={visibleDoctorIds}
           workingHoursMap={workingHoursMap}
+          onDayAction={handleDayAction}
         />
 
-        {/* ── Queue stats panel ── */}
-        <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-2 flex items-center gap-3">
+        {/* ── Queue stats + legend bar ── */}
+        <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-1.5 flex items-center gap-3 overflow-x-auto">
           <Users size={13} className="text-gray-400 shrink-0" />
-          <span className="text-xs text-gray-600 font-medium">
+          <span className="text-xs text-gray-600 font-medium whitespace-nowrap">
             {format(date, 'd MMM', { locale: ru })}:
           </span>
-          <span className="text-xs text-gray-700">{queueStats.total} зап.</span>
+          <span className="text-xs text-gray-700 whitespace-nowrap">{queueStats.total} зап.</span>
           {queueStats.waiting > 0 && (
-            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium border border-amber-100">
+            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium border border-amber-100 whitespace-nowrap">
               {queueStats.waiting} ожидают
             </span>
           )}
           {queueStats.done > 0 && (
-            <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium border border-emerald-100">
+            <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium border border-emerald-100 whitespace-nowrap">
               {queueStats.done} завершено
             </span>
           )}
           {queueStats.total === 0 && (
-            <span className="text-xs text-gray-400">Записей нет</span>
+            <span className="text-xs text-gray-400 whitespace-nowrap">Записей нет</span>
           )}
+
+          <div className="flex-1 min-w-3" />
+
+          {/* ── Visual legend ── */}
+          <div className="flex items-center gap-2.5 border-l border-gray-100 pl-3 shrink-0">
+            {/* Zone types */}
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-3.5 h-3 rounded-sm bg-white border border-gray-200" />
+              <span className="text-[9px] text-gray-400">Рабочее</span>
+            </div>
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-3.5 h-3 rounded-sm bg-gray-100" />
+              <span className="text-[9px] text-gray-400">Прошедшее</span>
+            </div>
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-3.5 h-3 rounded-sm" style={LEGEND_HATCH} />
+              <span className="text-[9px] text-gray-400">Нерабочее</span>
+            </div>
+
+            <div className="w-px h-3.5 bg-gray-200" />
+
+            {/* Appointment statuses */}
+            {[
+              { label: 'Создана',      cls: 'bg-blue-500' },
+              { label: 'Подтверждена', cls: 'bg-emerald-500' },
+              { label: 'Завершена',    cls: 'bg-gray-400' },
+              { label: 'Отменена',     cls: 'bg-rose-400' },
+              { label: 'Не пришёл',   cls: 'bg-amber-400' },
+            ].map(({ label, cls }) => (
+              <div key={label} className="flex items-center gap-1 whitespace-nowrap">
+                <div className={`w-1 h-3.5 ${cls} rounded-full`} />
+                <span className="text-[9px] text-gray-400">{label}</span>
+              </div>
+            ))}
+
+            <div className="w-px h-3.5 bg-gray-200" />
+
+            {/* Current time + live queue */}
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-2 h-2 rounded-full bg-red-500 ring-1 ring-red-200" />
+              <span className="text-[9px] text-gray-400">Сейчас</span>
+            </div>
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[9px] bg-amber-50 text-amber-600 px-1.5 rounded-full border border-amber-100 leading-[14px]">•</span>
+              <span className="text-[9px] text-gray-400">Живая очередь</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1075,6 +1283,13 @@ export default function ScheduleGridPage() {
         confirmLabel={simpleAction?.label ?? 'Подтвердить'}
         confirmVariant="primary"
         isLoading={simpleActionPending}
+      />
+
+      <DayActionMenu
+        target={dayActionTarget}
+        onClose={() => setDayActionTarget(null)}
+        onApply={handleDayApply}
+        isLoading={createExcMut.isPending}
       />
     </div>
   )

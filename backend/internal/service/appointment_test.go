@@ -10,10 +10,51 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Hacieva/clinic-scheduler/backend/internal/availability"
 	apperrors "github.com/Hacieva/clinic-scheduler/backend/internal/errors"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/model"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/repository"
 )
+
+// mockScheduleChecker implements availability.ScheduleRepository for service tests.
+type mockScheduleChecker struct {
+	schedule   []availability.RegularSchedule
+	exceptions []availability.Exception
+	schedErr   error
+	excErr     error
+}
+
+func (m *mockScheduleChecker) GetWorkingHours(_ context.Context, _ int64) ([]availability.RegularSchedule, error) {
+	return m.schedule, m.schedErr
+}
+
+func (m *mockScheduleChecker) GetScheduleExceptions(_ context.Context, _ int64, _, _ time.Time) ([]availability.Exception, error) {
+	return m.exceptions, m.excErr
+}
+
+// availTOD builds a time-of-day value in UTC (used by openScheduleChecker).
+func availTOD(h, m int) time.Time {
+	return time.Date(0, 1, 1, h, m, 0, 0, time.UTC)
+}
+
+// openScheduleChecker returns a permissive schedule covering all 7 weekdays
+// from 00:00 to 23:59 UTC — ensures existing tests are not affected by the
+// new working-hours check.
+func openScheduleChecker() *mockScheduleChecker {
+	var sched []availability.RegularSchedule
+	for wd := time.Sunday; wd <= time.Saturday; wd++ {
+		sched = append(sched, availability.RegularSchedule{
+			DayOfWeek: wd,
+			Start:     availTOD(0, 0),
+			End:       availTOD(23, 59),
+		})
+	}
+	return &mockScheduleChecker{schedule: sched}
+}
+
+// fixedFuture is a deterministic future timestamp used in unit tests.
+// 2030-06-15 10:00 UTC is always After(time.Now()) and safely within a 00:00–23:59 schedule.
+var fixedFuture = time.Date(2030, 6, 15, 10, 0, 0, 0, time.UTC)
 
 // mockAppointmentRepo implements repository.AppointmentRepository for service-layer tests.
 type mockAppointmentRepo struct {
@@ -115,16 +156,16 @@ func sampleCreateInput() CreateAppointmentInput {
 		PatientPhone: "+79001234567",
 		DoctorID:     1,
 		ServiceID:    1,
-		StartAt:      time.Now().Add(2 * time.Hour),
+		StartAt:      fixedFuture,
 		Source:       model.SourceAdminPanel,
 	}
 }
 
-// newApptSvc builds an AppointmentService with a default doctorSvcRepo that
-// reports the service as assigned (IsAssigned = true). Tests that need to
-// override the assignment mock should construct AppointmentService directly.
+// newApptSvc builds an AppointmentService with permissive defaults for the
+// doctorSvcRepo (assigned=true) and scheduleChecker (all-hours open).
+// Tests that need to override either should construct AppointmentService directly.
 func newApptSvc(apptRepo *mockAppointmentRepo, docRepo *mockDoctorRepo, svcRepo *mockServiceRepo) *AppointmentService {
-	return NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorServiceRepo{assigned: true})
+	return NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorServiceRepo{assigned: true}, openScheduleChecker())
 }
 
 // — Create —
@@ -209,6 +250,7 @@ func TestAppointmentCreate_ServiceWrongDoctor(t *testing.T) {
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: false},
+		openScheduleChecker(),
 	)
 
 	result, err := svc.Create(context.Background(), sampleCreateInput())
@@ -552,6 +594,7 @@ func TestAppointmentCreate_ConcurrentSlot(t *testing.T) {
 		&mockDoctorRepo{doctor: sampleDoctorWithDir()},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
+		openScheduleChecker(),
 	)
 
 	input := sampleCreateInput()
@@ -589,3 +632,138 @@ func TestAppointmentCreate_ConcurrentSlot(t *testing.T) {
 	assert.Equal(t, int64(workers-1), conflictCount.Load(), "all other goroutines must get ErrSlotTaken")
 	assert.Equal(t, int64(0), otherCount.Load(), "no unexpected errors")
 }
+
+// — Working-hours gate tests —
+
+// TestAppointmentCreate_DayOff_BlocksBooking: a day_off exception makes Create
+// return ErrOutsideHours even though the regular schedule would allow it.
+func TestAppointmentCreate_DayOff_BlocksBooking(t *testing.T) {
+	doc := sampleDoctorWithDir()
+	wd := fixedFuture.Weekday()
+	checker := &mockScheduleChecker{
+		schedule: []availability.RegularSchedule{
+			{DayOfWeek: wd, Start: availTOD(9, 0), End: availTOD(18, 0)},
+		},
+		exceptions: []availability.Exception{
+			{Date: fixedFuture, Type: "day_off"},
+		},
+	}
+	svc := NewAppointmentService(
+		&mockAppointmentRepo{},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
+		checker,
+	)
+
+	_, err := svc.Create(context.Background(), sampleCreateInput())
+	assert.ErrorIs(t, err, apperrors.ErrOutsideHours)
+}
+
+// TestAppointmentCreate_CustomHours_InsideRange: a custom_working_hours exception
+// that covers fixedFuture (10:00–10:30) allows the booking.
+func TestAppointmentCreate_CustomHours_InsideRange(t *testing.T) {
+	doc := sampleDoctorWithDir()
+	wd := fixedFuture.Weekday()
+	checker := &mockScheduleChecker{
+		schedule: []availability.RegularSchedule{
+			{DayOfWeek: wd, Start: availTOD(9, 0), End: availTOD(12, 0)},
+		},
+		exceptions: []availability.Exception{
+			{
+				Date:  fixedFuture,
+				Type:  "custom_working_hours",
+				Start: ptrTime(availTOD(8, 0)),
+				End:   ptrTime(availTOD(17, 0)),
+			},
+		},
+	}
+	svc := NewAppointmentService(
+		&mockAppointmentRepo{appt: sampleAppt()},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
+		checker,
+	)
+
+	_, err := svc.Create(context.Background(), sampleCreateInput())
+	assert.NoError(t, err)
+}
+
+// TestAppointmentCreate_CustomHours_OutsideRange: custom_working_hours 11:00–17:00
+// blocks a booking at fixedFuture (10:00–10:30) → ErrOutsideHours.
+func TestAppointmentCreate_CustomHours_OutsideRange(t *testing.T) {
+	doc := sampleDoctorWithDir()
+	checker := &mockScheduleChecker{
+		exceptions: []availability.Exception{
+			{
+				Date:  fixedFuture,
+				Type:  "custom_working_hours",
+				Start: ptrTime(availTOD(11, 0)),
+				End:   ptrTime(availTOD(17, 0)),
+			},
+		},
+	}
+	svc := NewAppointmentService(
+		&mockAppointmentRepo{},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
+		checker,
+	)
+
+	_, err := svc.Create(context.Background(), sampleCreateInput())
+	assert.ErrorIs(t, err, apperrors.ErrOutsideHours)
+}
+
+// TestAppointmentCreate_NonWorkingDay: no schedule entry for fixedFuture's weekday
+// → ErrOutsideHours (non-working day blocks booking).
+func TestAppointmentCreate_NonWorkingDay(t *testing.T) {
+	doc := sampleDoctorWithDir()
+	// Build a schedule that explicitly excludes fixedFuture's weekday.
+	wd := fixedFuture.Weekday()
+	otherWD := (wd + 1) % 7
+	checker := &mockScheduleChecker{
+		schedule: []availability.RegularSchedule{
+			{DayOfWeek: otherWD, Start: availTOD(9, 0), End: availTOD(18, 0)},
+		},
+	}
+	svc := NewAppointmentService(
+		&mockAppointmentRepo{},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
+		checker,
+	)
+
+	_, err := svc.Create(context.Background(), sampleCreateInput())
+	assert.ErrorIs(t, err, apperrors.ErrOutsideHours)
+}
+
+// TestAppointmentCreate_DeleteException_RestoresBooking: after a day_off exception
+// is deleted (simulated by the absence of exceptions), a booking within the
+// regular schedule succeeds. Paired with TestAppointmentCreate_DayOff_BlocksBooking
+// to demonstrate that deleting the exception restores normal working hours.
+func TestAppointmentCreate_DeleteException_RestoresBooking(t *testing.T) {
+	doc := sampleDoctorWithDir()
+	wd := fixedFuture.Weekday()
+	// No exceptions — this is the state after the day_off exception has been deleted.
+	checker := &mockScheduleChecker{
+		schedule: []availability.RegularSchedule{
+			{DayOfWeek: wd, Start: availTOD(9, 0), End: availTOD(18, 0)},
+		},
+	}
+	svc := NewAppointmentService(
+		&mockAppointmentRepo{appt: sampleAppt()},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
+		checker,
+	)
+
+	_, err := svc.Create(context.Background(), sampleCreateInput())
+	assert.NoError(t, err)
+}
+
+// ptrTime is a helper used by working-hours tests.
+func ptrTime(t time.Time) *time.Time { return &t }

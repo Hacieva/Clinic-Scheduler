@@ -14,11 +14,32 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Hacieva/clinic-scheduler/backend/internal/api/middleware"
+	"github.com/Hacieva/clinic-scheduler/backend/internal/availability"
 	apperrors "github.com/Hacieva/clinic-scheduler/backend/internal/errors"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/model"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/repository"
 	"github.com/Hacieva/clinic-scheduler/backend/internal/service"
 )
+
+// openApptScheduleChecker is an availability.ScheduleRepository that always
+// permits any booking time — isolates handler tests from schedule-validation logic.
+type openApptScheduleChecker struct{}
+
+func (o *openApptScheduleChecker) GetWorkingHours(_ context.Context, _ int64) ([]availability.RegularSchedule, error) {
+	var sched []availability.RegularSchedule
+	for wd := time.Sunday; wd <= time.Saturday; wd++ {
+		sched = append(sched, availability.RegularSchedule{
+			DayOfWeek: wd,
+			Start:     time.Date(0, 1, 1, 0, 0, 0, 0, time.UTC),
+			End:       time.Date(0, 1, 1, 23, 59, 0, 0, time.UTC),
+		})
+	}
+	return sched, nil
+}
+
+func (o *openApptScheduleChecker) GetScheduleExceptions(_ context.Context, _ int64, _, _ time.Time) ([]availability.Exception, error) {
+	return nil, nil
+}
 
 const testBotSecret = "test-bot-secret-key"
 
@@ -129,7 +150,7 @@ func (m *mockDoctorSvcRepo) BulkReplace(_ context.Context, _ int64, _ []int64) e
 }
 
 func newAppointmentRouter(apptRepo *mockApptRepo, docRepo *mockDoctorRepo, svcRepo *mockServiceRepo, botSecret string) http.Handler {
-	svc := service.NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorSvcRepo{assigned: true})
+	svc := service.NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorSvcRepo{assigned: true}, &openApptScheduleChecker{})
 	h := NewAppointmentHandler(svc)
 
 	r := chi.NewRouter()

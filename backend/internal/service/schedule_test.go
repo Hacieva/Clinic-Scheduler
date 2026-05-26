@@ -253,3 +253,69 @@ func TestDeleteException_NotFound(t *testing.T) {
 	err := svc.DeleteException(context.Background(), 99)
 	assert.ErrorIs(t, err, apperrors.ErrNotFound)
 }
+
+// — CreateExceptionRange —
+
+func TestCreateExceptionRange_Valid(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{})
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	count, err := svc.CreateExceptionRange(context.Background(), 1, from, to, model.ExceptionTypeDayOff)
+	assert.NoError(t, err)
+	assert.Zero(t, count) // mock always returns 0 created rows
+}
+
+func TestCreateExceptionRange_SingleDay(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{})
+	d := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+
+	count, err := svc.CreateExceptionRange(context.Background(), 1, d, d, model.ExceptionTypeDayOff)
+	assert.NoError(t, err)
+	assert.Zero(t, count)
+}
+
+func TestCreateExceptionRange_CustomWorkingHoursType(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{})
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
+
+	_, err := svc.CreateExceptionRange(context.Background(), 1, from, to, model.ExceptionTypeCustomWorkingHours)
+	assert.NoError(t, err)
+}
+
+func TestCreateExceptionRange_InvalidType(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{})
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	_, err := svc.CreateExceptionRange(context.Background(), 1, from, to, model.ExceptionType("blocked_time"))
+	assert.ErrorIs(t, err, apperrors.ErrInvalidSchedule)
+}
+
+func TestCreateExceptionRange_FromAfterTo(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{})
+	from := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err := svc.CreateExceptionRange(context.Background(), 1, from, to, model.ExceptionTypeDayOff)
+	assert.ErrorIs(t, err, apperrors.ErrInvalidSchedule)
+}
+
+func TestCreateExceptionRange_TooLong(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{})
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(1, 0, 1) // 366+ days
+
+	_, err := svc.CreateExceptionRange(context.Background(), 1, from, to, model.ExceptionTypeDayOff)
+	assert.ErrorIs(t, err, apperrors.ErrInvalidSchedule)
+}
+
+func TestCreateExceptionRange_RepoError(t *testing.T) {
+	svc := NewScheduleService(&mockScheduleRepo{err: apperrors.ErrNotFound})
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
+
+	_, err := svc.CreateExceptionRange(context.Background(), 1, from, to, model.ExceptionTypeDayOff)
+	assert.ErrorIs(t, err, apperrors.ErrNotFound)
+}
