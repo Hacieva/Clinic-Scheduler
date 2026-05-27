@@ -16,9 +16,12 @@ func main() {
 		pricesPath    = flag.String("prices", "", "Path to Медлок_Прайсы_и_Врачи_Второй_Филиал.xlsx (required)")
 		dikiDiPath    = flag.String("dikidi", "", "Path to Новая таблица.xlsx (optional)")
 		overridesPath = flag.String("overrides", "", "Path to manual_overrides.csv (optional)")
-		branchFilter  = flag.String("branch", "", "Filter output by branch name (optional)")
-		doImport      = flag.Bool("import", false, "Execute import (requires --confirm)")
-		confirm       = flag.Bool("confirm", false, "Confirm destructive import (required with --import)")
+		syntheticPath    = flag.String("synthetic", "", "Path to synthetic_services.csv (optional)")
+		branchFilter     = flag.String("branch", "", "Filter output by branch name (optional)")
+		dumpServices     = flag.Bool("dump-services", false, "Print parsed service catalog as CSV and exit")
+		dumpAssignments  = flag.Bool("dump-assignments", false, "Print all parsed assignments as CSV and exit")
+		doImport         = flag.Bool("import", false, "Execute import (requires --confirm)")
+		confirm          = flag.Bool("confirm", false, "Confirm destructive import (required with --import)")
 	)
 	flag.Parse()
 
@@ -38,6 +41,7 @@ func main() {
 		PricesPath:    *pricesPath,
 		DikiDiPath:    *dikiDiPath,
 		OverridesPath: *overridesPath,
+		SyntheticPath: *syntheticPath,
 	}
 
 	plan, err := importer.Parse(cfg)
@@ -45,6 +49,24 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		fmt.Fprintln(os.Stderr, "\n=== PARSE FAILED ===")
 		os.Exit(1)
+	}
+
+	if *dumpServices {
+		fmt.Println("code,name,category,duration_minutes,price_kopecks,branch")
+		for _, s := range plan.Services {
+			fmt.Printf("%q,%q,%q,%d,%d,%q\n",
+				s.Code, s.Name, s.Category, s.DurationMinutes, s.Price, s.BranchName)
+		}
+		return
+	}
+
+	if *dumpAssignments {
+		fmt.Println("doctor_name,service_name,service_code,patient_type,confidence")
+		for _, a := range plan.Assignments {
+			fmt.Printf("%q,%q,%q,%q,%q\n",
+				a.DoctorName, a.ServiceName, a.ServiceCode, string(a.PatientType), a.MatchConfidence)
+		}
+		return
 	}
 
 	if *branchFilter != "" {
@@ -188,6 +210,16 @@ func printSummary(plan *importer.ImportPlan, isDryRun bool) {
 		}
 	}
 
+	// Print fuzzy matches for manual review.
+	fuzzyList := collectByConfidence(plan, "fuzzy")
+	if len(fuzzyList) > 0 {
+		fmt.Println()
+		fmt.Println("Fuzzy matches (verify manually — source_name → matched_code):")
+		for _, entry := range fuzzyList {
+			fmt.Printf("  %q → %s\n", entry[0], entry[1])
+		}
+	}
+
 	// Print unmatched services list (deduped, sorted) for manual_overrides.csv.
 	unmatchedNames := collectUnmatched(plan)
 	if len(unmatchedNames) > 0 {
@@ -221,5 +253,24 @@ func collectUnmatched(plan *importer.ImportPlan) []string {
 		result = append(result, n)
 	}
 	sort.Strings(result)
+	return result
+}
+
+// collectByConfidence returns deduped [sourceName, serviceCode] pairs for the given confidence level.
+func collectByConfidence(plan *importer.ImportPlan, confidence string) [][2]string {
+	seen := map[string]string{}
+	for _, a := range plan.Assignments {
+		if a.MatchConfidence == confidence {
+			seen[a.ServiceName] = a.ServiceCode
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	result := make([][2]string, 0, len(seen))
+	for name, code := range seen {
+		result = append(result, [2]string{name, code})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i][0] < result[j][0] })
 	return result
 }

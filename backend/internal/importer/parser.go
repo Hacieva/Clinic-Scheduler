@@ -11,10 +11,11 @@ import (
 
 // ParseConfig holds the file paths for all three source files.
 type ParseConfig struct {
-	DoctorsPath   string // График_врачей_МЕДИК_ПРОФИ.xlsx (required)
-	PricesPath    string // Медлок_Прайсы_и_Врачи_Второй_Филиал.xlsx (required)
-	DikiDiPath    string // Новая таблица.xlsx (optional; used for duration cross-check)
-	OverridesPath string // manual_overrides.csv (optional)
+	DoctorsPath        string // График_врачей_МЕДИК_ПРОФИ.xlsx (required)
+	PricesPath         string // Медлок_Прайсы_и_Врачи_Второй_Филиал.xlsx (required)
+	DikiDiPath         string // Новая таблица.xlsx (optional; used for duration cross-check)
+	OverridesPath      string // manual_overrides.csv (optional)
+	SyntheticPath      string // synthetic_services.csv (optional; services not in Medlock catalog)
 }
 
 // Parse reads all source files and returns an ImportPlan.
@@ -34,6 +35,10 @@ func Parse(cfg ParseConfig) (*ImportPlan, error) {
 
 	if err := parseServices(cfg.PricesPath, plan); err != nil {
 		return nil, fmt.Errorf("parsing services: %w", err)
+	}
+
+	if err := parseSyntheticServices(cfg.SyntheticPath, plan); err != nil {
+		return nil, fmt.Errorf("parsing synthetic services: %w", err)
 	}
 
 	overrides, err := loadOverrides(cfg.OverridesPath)
@@ -382,6 +387,90 @@ func matchService(norm string, serviceByNorm, overrides map[string]string, rawNa
 		}
 	}
 	return "", "unmatched"
+}
+
+// parseSyntheticServices reads synthetic_services.csv (optional).
+// It injects services that do not appear in any Medlock price sheet but are
+// referenced by doctor_services_v2 (e.g. generic "Первичная консультация").
+// CSV columns (header required): code,name,category,duration_minutes,price_kopecks
+func parseSyntheticServices(path string, plan *ImportPlan) error {
+	if path == "" {
+		return nil
+	}
+	fh, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("opening synthetic services %s: %w", path, err)
+	}
+	defer fh.Close()
+
+	r := csv.NewReader(fh)
+	records, err := r.ReadAll()
+	if err != nil {
+		return fmt.Errorf("reading synthetic services CSV: %w", err)
+	}
+
+	if len(records) < 2 {
+		return nil
+	}
+
+	colIdx := headerIndex(records[0])
+
+	seen := map[string]bool{}
+	for _, s := range plan.Services {
+		key := s.Code
+		if key == "" {
+			key = "__name__" + strings.ToLower(s.Name)
+		}
+		seen[key] = true
+	}
+
+	for i, rec := range records[1:] {
+		get := func(name string) string {
+			idx, ok := colIdx[name]
+			if !ok || idx >= len(rec) {
+				return ""
+			}
+			return strings.TrimSpace(rec[idx])
+		}
+
+		code := get("code")
+		name := get("name")
+		if name == "" {
+			plan.warn("service", fmt.Sprintf("synthetic_row_%d", i+2), "missing_name",
+				"synthetic services row has no name — skipped")
+			continue
+		}
+
+		dedupKey := code
+		if dedupKey == "" {
+			dedupKey = "__name__" + strings.ToLower(name)
+		}
+		if seen[dedupKey] {
+			continue
+		}
+		seen[dedupKey] = true
+
+		durMin, _ := ParseDuration(get("duration_minutes"))
+		price, _ := ParsePriceKopecks(get("price_kopecks"))
+
+		category := get("category")
+		if category == "" {
+			category = "Прочее"
+		}
+
+		plan.Services = append(plan.Services, ServiceRow{
+			Code:            code,
+			Name:            name,
+			Category:        category,
+			DurationMinutes: durMin,
+			Price:           price,
+			BranchName:      "",
+		})
+	}
+	return nil
 }
 
 // loadOverrides reads manual_overrides.csv (optional).

@@ -1,1 +1,32 @@
 raw_name,canonical_code,confidence,notes
+Консультация,КОНС001,high,Generic standalone consultation → primary; blocks wrong fuzzy to КВ014
+УЗИ мягких тканей ребенку,УЗД042,high,Fix: fuzzy matched adult УЗД011; ребенку → Детское УЗИ мягких тканей
+УЗИ щитовидной железы ребенку,УЗД038,high,Fix: fuzzy matched adult УЗД010; ребенку → Детское УЗИ щитовидной железы
+Лазеротерапия / МЛТ,ФИЗ006,high,МЛТ abbreviation in Medlock name: (МЛТ)лазеро-магнитотерапия
+УВЧ-терапия,ФИЗ005,high,УВЧ abbreviation; Medlock: УВЧ-ультравысокочастотная терапия
+Дарсонвализация,ФИЗ010,high,Same device/procedure; Medlock shortens to Дарсонваль
+КУФ / коротковолновая ультрафиолетовая физиотерапия,ФИЗ007,high,КУФ-терапия is the canonical short form
+УВТ,ФИЗ009,high,Abbreviation; Medlock: Ударно-волновая терапия (УВТ)
+Продувание слуховой трубы по Политцеру,ЛОР005,high,Same named procedure; Medlock adds пневмомассаж qualifier
+Вскрытие паратонзиллярного абсцесса,ЛОР009,high,Identical procedure; Medlock has typo паратонзилярного vs паратонзиллярного
+Туалет послеоперационной полости уха,ЛОР010,high,Identical procedure; Medlock has different word order
+Туалет ушей при наружных отитах,ЛОР002,high,Same procedure; Medlock adds с прижиганием грануляции qualifier
+ЭГДС с определением Helicobacter pylori,Э002,high,Same procedure; Latin vs Russian transliteration of Helicobacter
+Холтеровское мониторирование ЭКГ,ЭФИ001,high,Medical synonym: Holter = суточное мониторирование ЭКГ
+УЗИ простаты и мочевого пузыря с определением остаточной мочи,УЗД024,high,простаты = предстательной железы (medical synonyms); identical procedure
+УЗДС сосудов БЦА,УЗД016,high,БЦА = брахицефальные артерии; matches УЗДС брахицефальных сосудов
+УЗДС артерий и вен верхних конечностей,УЗД006,high,Same; Medlock adds (обе конечности); both limbs assumed
+УЗИ сердца ребенку,УЗД029,high,ЭХО-КГ = УЗИ сердца; Детское = ребенку
+УЗИ брюшной полости ребенку + почки + мочевой пузырь,УЗД046,high,Content matches Детское УЗИ ОБП (почки+мочевой пузырь+ЖП+…)
+УЗИ тазобедренных суставов ребенку,УЗД028,high,Direct pediatric match: Детское УЗИ тазобедренных суставов
+УЗИ пилорического отдела желудка ребенку,УЗД037,high,Direct pediatric match: Детское УЗИ пилорического отдела желудка
+УЗИ мочевыделительной системы ребенку,УЗД040,high,Direct pediatric match: Детское УЗИ почек + мочевыделительной системы
+Плановый скрининг ребенка,УЗД048,high,Детское плановое УЗИ = плановый скрининг ребенка
+УЗИ швов черепа ребенку,УЗД036,high,Direct pediatric match: Детское УЗИ швов черепа
+УЗИ органов брюшной полости,УЗД008,high,Basic OBP without kidneys; rule: do not map to УЗД018 unless source includes почки
+Первичный осмотр ЛОР-врача,КВ010,medium,MVP mapping: осмотр treated as консультация for adult ENT; clinic to verify billing codes
+Прижигание боковых валиков задней стенки глотки или сосудов полости носа,ЛОР006,medium,MVP mapping to Прижигание слизистой носоглотки; clinic to confirm procedure equivalence
+Массаж детский,МАС001,high,Generic детский массаж → Общий детский массаж; МАС002 only when source says спина
+УЗИ почек,УЗД009,high,All 3 doctors are adult/general UZD specialists; pediatric kidney US always has ребенку suffix
+УЗИ сердца,УЗД015,high,Асуханова Алия is adult ultrasound doctor; adult ЭХО-КГ; pediatric handled by УЗИ сердца ребенку→УЗД029
+УЗИ суставов,УЗД027,needs_review,Mapped to парные конечности for MVP; clinic must confirm one (УЗД026) vs paired (УЗД027); 2 assignments affected
