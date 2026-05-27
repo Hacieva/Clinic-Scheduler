@@ -40,3 +40,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Import — raw clinic data files must never be committed
+import/data/
