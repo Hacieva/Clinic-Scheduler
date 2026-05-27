@@ -1,29 +1,37 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/Hacieva/clinic-scheduler/backend/internal/importer"
 )
 
 func main() {
 	var (
-		doctorsPath   = flag.String("doctors", "", "Path to График_врачей_МЕДИК_ПРОФИ.xlsx (required)")
-		pricesPath    = flag.String("prices", "", "Path to Медлок_Прайсы_и_Врачи_Второй_Филиал.xlsx (required)")
-		dikiDiPath    = flag.String("dikidi", "", "Path to Новая таблица.xlsx (optional)")
-		overridesPath = flag.String("overrides", "", "Path to manual_overrides.csv (optional)")
-		syntheticPath    = flag.String("synthetic", "", "Path to synthetic_services.csv (optional)")
-		branchFilter     = flag.String("branch", "", "Filter output by branch name (optional)")
-		dumpServices     = flag.Bool("dump-services", false, "Print parsed service catalog as CSV and exit")
-		dumpAssignments  = flag.Bool("dump-assignments", false, "Print all parsed assignments as CSV and exit")
-		doImport         = flag.Bool("import", false, "Execute import (requires --confirm)")
-		confirm          = flag.Bool("confirm", false, "Confirm destructive import (required with --import)")
+		doctorsPath     = flag.String("doctors", "", "Path to График_врачей_МЕДИК_ПРОФИ.xlsx (required)")
+		pricesPath      = flag.String("prices", "", "Path to Медлок_Прайсы_и_Врачи_Второй_Филиал.xlsx (required)")
+		dikiDiPath      = flag.String("dikidi", "", "Path to Новая таблица.xlsx (optional)")
+		overridesPath   = flag.String("overrides", "", "Path to manual_overrides.csv (optional)")
+		syntheticPath   = flag.String("synthetic", "", "Path to synthetic_services.csv (optional)")
+		branchFilter    = flag.String("branch", "", "Filter output by branch name (optional)")
+		dbURL           = flag.String("db", "", "PostgreSQL connection URL (defaults to DATABASE_URL env var)")
+		dumpServices    = flag.Bool("dump-services", false, "Print parsed service catalog as CSV and exit")
+		dumpAssignments = flag.Bool("dump-assignments", false, "Print all parsed assignments as CSV and exit")
+		doImport        = flag.Bool("import", false, "Execute import (requires --confirm)")
+		confirm         = flag.Bool("confirm", false, "Confirm destructive import (required with --import)")
 	)
 	flag.Parse()
+
+	if *dbURL == "" {
+		*dbURL = os.Getenv("DATABASE_URL")
+	}
 
 	if *doctorsPath == "" || *pricesPath == "" {
 		fmt.Fprintln(os.Stderr, "ERROR: --doctors and --prices are required")
@@ -74,9 +82,43 @@ func main() {
 	}
 
 	if *doImport {
-		fmt.Fprintln(os.Stderr, "ERROR: import execution is not yet implemented — use --dry-run to verify")
-		printSummary(plan, true)
-		os.Exit(1)
+		if *dbURL == "" {
+			fmt.Fprintln(os.Stderr, "ERROR: --import requires --db or DATABASE_URL env var")
+			os.Exit(1)
+		}
+		ctx := context.Background()
+		db, err := pgxpool.New(ctx, *dbURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: connecting to database: %v\n", err)
+			os.Exit(1)
+		}
+		defer db.Close()
+
+		if err := db.Ping(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: pinging database: %v\n", err)
+			os.Exit(1)
+		}
+
+		res, err := importer.Execute(ctx, db, plan)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: import failed: %v\n", err)
+			printSummary(plan, false)
+			os.Exit(1)
+		}
+
+		fmt.Println("=== IMPORT COMPLETE ===")
+		fmt.Println()
+		fmt.Printf("Branches written:        %d\n", res.Branches)
+		fmt.Printf("Directions written:      %d\n", res.Directions)
+		fmt.Printf("Services written:        %d\n", res.Services)
+		fmt.Printf("Doctors written:         %d\n", res.Doctors)
+		fmt.Printf("Working hour rows:       %d\n", res.WorkingHourRows)
+		fmt.Printf("Doctor–direction links:  %d\n", res.DoctorDirs)
+		fmt.Printf("Doctor–service links:    %d\n", res.DoctorServices)
+		fmt.Printf("Assignments skipped:     %d (unmatched or uncoded)\n", res.Skipped)
+		fmt.Println()
+		fmt.Println("=== TRANSACTION COMMITTED ===")
+		return
 	}
 
 	printSummary(plan, true)
