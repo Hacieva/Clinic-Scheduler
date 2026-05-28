@@ -309,15 +309,22 @@ function StaffRow({ doctor, allBranches, onNavigate, onEdit, onDelete }) {
 
       {/* Status */}
       <td className="px-4 py-3">
-        <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-            doctor.is_active
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-rose-50 text-rose-600 border border-rose-200'
-          }`}
-        >
-          {doctor.is_active ? 'Активен' : 'Неактивен'}
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+              doctor.is_active
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-rose-50 text-rose-600 border border-rose-200'
+            }`}
+          >
+            {doctor.is_active ? 'Активен' : 'Неактивен'}
+          </span>
+          {doctor.doctor_kind === 'visiting' && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-600 border border-violet-200">
+              Выезд
+            </span>
+          )}
+        </div>
       </td>
 
       {/* Actions */}

@@ -58,7 +58,7 @@ func (r *DoctorRepo) List(ctx context.Context, filter DoctorFilter) ([]model.Doc
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.user_id, d.first_name, d.last_name, d.middle_name,
 		       d.cabinet, d.branch_id, d.phone, d.description, d.photo_url,
-		       d.is_active, d.created_at, d.updated_at,
+		       d.is_active, d.created_at, d.updated_at, d.doctor_kind,
 		       dir.id, dir.name, dir.description, dir.is_active, dir.created_at, dir.updated_at
 		FROM   doctors d
 		LEFT   JOIN doctor_directions dd ON dd.doctor_id = d.id
@@ -80,7 +80,7 @@ func (r *DoctorRepo) GetByID(ctx context.Context, id int64) (*model.DoctorWithDi
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.user_id, d.first_name, d.last_name, d.middle_name,
 		       d.cabinet, d.branch_id, d.phone, d.description, d.photo_url,
-		       d.is_active, d.created_at, d.updated_at,
+		       d.is_active, d.created_at, d.updated_at, d.doctor_kind,
 		       dir.id, dir.name, dir.description, dir.is_active, dir.created_at, dir.updated_at
 		FROM   doctors d
 		LEFT   JOIN doctor_directions dd ON dd.doctor_id = d.id
@@ -318,7 +318,7 @@ func scanDoctorsWithDirections(rows pgx.Rows) ([]model.DoctorWithDirections, err
 		if err := rows.Scan(
 			&doc.ID, &doc.UserID, &doc.FirstName, &doc.LastName, &doc.MiddleName,
 			&doc.Cabinet, &doc.BranchID, &doc.Phone, &doc.Description, &doc.PhotoURL,
-			&doc.IsActive, &doc.CreatedAt, &doc.UpdatedAt,
+			&doc.IsActive, &doc.CreatedAt, &doc.UpdatedAt, &doc.DoctorKind,
 			&dirID, &dirName, &dirDesc, &dirIsActive, &dirCreatedAt, &dirUpdatedAt,
 		); err != nil {
 			return nil, err

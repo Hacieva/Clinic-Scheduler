@@ -136,6 +136,8 @@ export default function DoctorServicesTab({ doctorId }) {
     })
   }
 
+  const PATIENT_TYPE_LABEL = { adult: 'Взрослые', child: 'Дети', both: 'Все' }
+
   const columns = [
     {
       key: 'category',
@@ -152,6 +154,14 @@ export default function DoctorServicesTab({ doctorId }) {
       key: 'price',
       label: 'Цена',
       render: (row) => fmtPrice(row.price),
+    },
+    {
+      key: 'patient_type',
+      label: 'Пациенты',
+      render: (row) => {
+        const label = PATIENT_TYPE_LABEL[row.patient_type] ?? row.patient_type ?? '—'
+        return <span className="text-xs text-gray-500">{label}</span>
+      },
     },
     {
       key: 'actions',

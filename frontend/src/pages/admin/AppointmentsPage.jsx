@@ -15,7 +15,7 @@ import {
   noShowAppointment,
 } from '../../api/appointments'
 import { getDoctors } from '../../api/doctors'
-import { getDoctorServices } from '../../api/services'
+import { getAssignedServices } from '../../api/services'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -509,8 +509,8 @@ export default function AppointmentsPage() {
   })
 
   const { data: createServices = [] } = useQuery({
-    queryKey: ['services', createDoctorId],
-    queryFn: () => getDoctorServices(Number(createDoctorId)),
+    queryKey: ['assigned-services', createDoctorId],
+    queryFn: () => getAssignedServices(Number(createDoctorId)),
     enabled: !!createDoctorId,
   })
 

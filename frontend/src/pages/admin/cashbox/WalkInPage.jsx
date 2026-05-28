@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { getPatients } from '../../../api/patients'
 import { getDoctors } from '../../../api/doctors'
-import { getDoctorServices } from '../../../api/services'
+import { getAssignedServices } from '../../../api/services'
 
 function formatPrice(kopecks) {
   if (!kopecks && kopecks !== 0) return '—'
@@ -49,8 +49,8 @@ export default function WalkInPage() {
   const activeDoctors = doctors.filter((d) => d.is_active)
 
   const { data: doctorServices = [] } = useQuery({
-    queryKey: ['doctor-services', newItem.doctor_id],
-    queryFn: () => getDoctorServices(newItem.doctor_id),
+    queryKey: ['assigned-services', newItem.doctor_id],
+    queryFn: () => getAssignedServices(newItem.doctor_id),
     enabled: !!newItem.doctor_id,
   })
   const activeServices = doctorServices.filter((s) => s.is_active)

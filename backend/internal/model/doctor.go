@@ -14,6 +14,7 @@ type Doctor struct {
 	Phone       *string   `json:"phone"`
 	Description *string   `json:"description"`
 	PhotoURL    *string   `json:"photo_url"`
+	DoctorKind  string    `json:"doctor_kind"` // "staff" or "visiting"
 	IsActive    bool      `json:"is_active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

@@ -57,13 +57,13 @@ func scanService(row interface {
 }) (model.Service, error) {
 	var s model.Service
 	err := row.Scan(
-		&s.ID, &s.DoctorID, &s.DirectionID, &s.Category, &s.Name, &s.Description,
+		&s.ID, &s.DoctorID, &s.DirectionID, &s.Category, &s.Name, &s.Code, &s.Description,
 		&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
 	)
 	return s, err
 }
 
-const serviceColumns = `id, doctor_id, direction_id, category, name, description,
+const serviceColumns = `id, doctor_id, direction_id, category, name, code, description,
 	       duration_minutes, price, is_active, created_at, updated_at`
 
 // ListByDoctor queries by the legacy doctor_id column.

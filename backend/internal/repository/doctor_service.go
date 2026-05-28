@@ -28,8 +28,9 @@ func NewDoctorServiceRepo(db *pgxpool.Pool) *DoctorServiceRepo {
 
 func (r *DoctorServiceRepo) ListAssignedToDoctor(ctx context.Context, doctorID int64) ([]model.Service, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT s.id, s.doctor_id, s.direction_id, s.category, s.name, s.description,
-		       s.duration_minutes, s.price, s.is_active, s.created_at, s.updated_at
+		SELECT s.id, s.doctor_id, s.direction_id, s.category, s.name, s.code, s.description,
+		       s.duration_minutes, s.price, s.is_active, s.created_at, s.updated_at,
+		       ds.patient_type
 		FROM   services s
 		JOIN   doctor_services ds ON ds.service_id = s.id
 		WHERE  ds.doctor_id = $1 AND s.is_active = true
@@ -43,8 +44,9 @@ func (r *DoctorServiceRepo) ListAssignedToDoctor(ctx context.Context, doctorID i
 	for rows.Next() {
 		var s model.Service
 		if err := rows.Scan(
-			&s.ID, &s.DoctorID, &s.DirectionID, &s.Category, &s.Name, &s.Description,
+			&s.ID, &s.DoctorID, &s.DirectionID, &s.Category, &s.Name, &s.Code, &s.Description,
 			&s.DurationMinutes, &s.Price, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
+			&s.PatientType,
 		); err != nil {
 			return nil, err
 		}

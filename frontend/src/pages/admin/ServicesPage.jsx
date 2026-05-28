@@ -128,6 +128,13 @@ function ServiceForm({ defaultValues, onSubmit, isLoading }) {
   )
 }
 
+// Services whose duration was defaulted to 30 min during import (unknown source duration).
+const ESTIMATED_DURATION_CODES = new Set([
+  'ДС001','ДС002','ДС003','ДС004','ДС005','ДС006','ДС007','ДС008',
+  'ЛД003','ЛД004','ЛД005','ЛД006','ЛД007','ЛД008','ЛД009','ЛД010',
+  'ПС001','ПС002',
+])
+
 function CategoryRow({ category, services, onEdit, onDelete }) {
   const [open, setOpen] = useState(true)
   const Chevron = open ? ChevronDown : ChevronRight
@@ -150,7 +157,12 @@ function CategoryRow({ category, services, onEdit, onDelete }) {
       {open &&
         services.map((svc) => (
           <tr key={svc.id} className="hover:bg-gray-50 border-t border-gray-100 transition-colors">
-            <td className="pl-10 pr-4 py-2.5 text-xs text-gray-400 font-mono w-12">{svc.id}</td>
+            <td className="pl-10 pr-4 py-2.5 text-xs font-mono w-12">
+              {svc.code
+                ? <span className="text-blue-600">{svc.code}</span>
+                : <span className="text-gray-300">{svc.id}</span>
+              }
+            </td>
             <td className="px-4 py-2.5">
               <div>
                 <p className="text-sm font-medium text-gray-900">{svc.name}</p>
@@ -162,6 +174,9 @@ function CategoryRow({ category, services, onEdit, onDelete }) {
             <td className="px-4 py-2.5 text-sm text-gray-600 whitespace-nowrap">{fmtPrice(svc.price)}</td>
             <td className="px-4 py-2.5 text-sm text-gray-600 whitespace-nowrap">
               {svc.duration_minutes} мин
+              {ESTIMATED_DURATION_CODES.has(svc.code) && (
+                <span className="ml-1 text-amber-400 text-xs" title="Длительность оценочная — уточните у клиники">~</span>
+              )}
             </td>
             <td className="px-4 py-2.5">
               <Badge variant={svc.is_active ? 'active' : 'inactive'}>
