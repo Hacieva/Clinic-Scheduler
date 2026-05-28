@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format, parseISO, isToday } from 'date-fns'
-import { Users, MoreVertical } from 'lucide-react'
+import { Users, MoreVertical, Lock } from 'lucide-react'
 import { getAppointments } from '../api/appointments'
 import { getDoctors } from '../api/doctors'
 
@@ -115,9 +115,46 @@ const HATCH = {
   backgroundColor: 'rgba(243,244,246,0.7)',
 }
 
+// Exception-narrowed zone (amber hatch) — working hours cut by custom_working_hours exception
+const EXCEPTION_HATCH = {
+  backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(251,146,60,0.22) 3px, rgba(251,146,60,0.22) 6px)',
+  backgroundColor: 'rgba(255,247,237,0.88)',
+}
+
+// Day-off full-column overlay
+const DAYOFF_STYLE = {
+  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(251,191,36,0.18) 10px, rgba(251,191,36,0.18) 20px)',
+  backgroundColor: 'rgba(255,251,235,0.90)',
+}
+
 function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, workHours, onDayAction, date }) {
   const appts = appointments.filter((a) => a.doctor_id === doctor.id)
   const [hoverSnap, setHoverSnap] = useState(null)
+
+  const isDayOff   = !!workHours?.isDayOff
+  const isCustomEx = !isDayOff && !!workHours?.isException && workHours?.exceptionType === 'custom_working_hours'
+
+  // Effective (active) start/end after exception
+  const activeStartMin = workHours?.startMin ?? DAY_END
+  const activeEndMin   = workHours?.endMin   ?? DAY_START
+
+  // Regular weekly schedule bounds (used to draw exception-narrowed amber zones)
+  const hasRegular  = isCustomEx && workHours.regularStartMin != null && workHours.regularEndMin != null
+  const regStartMin = hasRegular ? workHours.regularStartMin : activeStartMin
+  const regEndMin   = hasRegular ? workHours.regularEndMin   : activeEndMin
+
+  // HATCH (gray) outer boundary — outermost of regular vs active
+  const outerStartMin = Math.min(regStartMin, activeStartMin)
+  const outerEndMin   = Math.max(regEndMin,   activeEndMin)
+
+  const preBlockH    = workHours != null && !isDayOff ? Math.max(0, outerStartMin - DAY_START) : 0
+  const postBlockTop = workHours != null && !isDayOff ? Math.max(0, outerEndMin   - DAY_START) : GRID_H
+
+  // EXCEPTION_HATCH (amber) zones: active is narrower than regular
+  const excPreH    = isCustomEx ? Math.max(0, activeStartMin - regStartMin) : 0
+  const excPreTop  = Math.max(0, regStartMin - DAY_START)
+  const excPostTop = isCustomEx ? Math.max(0, activeEndMin   - DAY_START)   : GRID_H
+  const excPostH   = isCustomEx ? Math.max(0, regEndMin      - activeEndMin) : 0
 
   const getSnap = (e) => {
     const y = e.clientY - e.currentTarget.getBoundingClientRect().top
@@ -125,23 +162,30 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, wo
   }
 
   const handleClick = (e) => {
+    if (isDayOff) {
+      onDayAction?.({ doctorId: doctor.id, doctor, date })
+      return
+    }
     const snap = getSnap(e)
     const absMin = DAY_START + snap
-    if (workHours != null) {
-      if (absMin < workHours.startMin || absMin >= workHours.endMin) return
+    if (workHours != null && (absMin < workHours.startMin || absMin >= workHours.endMin)) {
+      onDayAction?.({ doctorId: doctor.id, doctor, date })
+      return
     }
     onSlotClick(doctor.id, minToTime(absMin))
   }
 
-  const preBlockH    = workHours != null ? Math.max(0, workHours.startMin - DAY_START) : 0
-  const postBlockTop = workHours != null ? Math.max(0, workHours.endMin   - DAY_START) : GRID_H
+  const handleMouseMove = (e) => {
+    if (isDayOff) { setHoverSnap(null); return }
+    setHoverSnap(getSnap(e))
+  }
 
   return (
     <div
-      className="relative border-r border-gray-100 last:border-r-0 cursor-cell"
+      className={`relative border-r border-gray-100 last:border-r-0 ${isDayOff ? 'cursor-pointer' : 'cursor-cell'}`}
       style={{ height: `${GRID_H}px`, minWidth: `${MIN_COL_W}px` }}
       onClick={handleClick}
-      onMouseMove={(e) => setHoverSnap(getSnap(e))}
+      onMouseMove={handleMouseMove}
       onMouseLeave={() => setHoverSnap(null)}
     >
       {/* Hour / half-hour guide lines */}
@@ -157,8 +201,21 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, wo
         />
       ))}
 
-      {/* Pre-work blocked zone — clickable to manage schedule */}
-      {preBlockH > 0 && (
+      {/* Day-off: decorative full-column overlay (pointer-events-none; click handled by column div) */}
+      {isDayOff && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none select-none"
+          style={{ zIndex: 8, ...DAYOFF_STYLE }}
+        >
+          <Lock size={16} className="text-amber-500 opacity-70" />
+          <span className="text-[11px] font-semibold text-amber-700 bg-amber-50/90 px-2 py-0.5 rounded-full shadow-sm border border-amber-200">
+            Выходной
+          </span>
+        </div>
+      )}
+
+      {/* Pre-work blocked zone (gray hatch) */}
+      {!isDayOff && preBlockH > 0 && (
         <div
           className="absolute inset-x-0 top-0 cursor-pointer hover:brightness-95 transition-colors group"
           style={{ height: `${preBlockH}px`, zIndex: 6, ...HATCH }}
@@ -171,8 +228,36 @@ function DoctorCol({ doctor, appointments, onEventClick, onSlotClick, nowTop, wo
         </div>
       )}
 
-      {/* Post-work blocked zone — clickable to manage schedule */}
-      {postBlockTop < GRID_H && (
+      {/* Exception pre-block: regular start → custom start (amber hatch) */}
+      {excPreH > 0 && (
+        <div
+          className="absolute inset-x-0 cursor-pointer hover:brightness-95 transition-colors group"
+          style={{ top: `${excPreTop}px`, height: `${excPreH}px`, zIndex: 7, ...EXCEPTION_HATCH }}
+          onClick={(e) => { e.stopPropagation(); onDayAction?.({ doctorId: doctor.id, doctor, date }) }}
+          title="Рабочие часы сокращены исключением"
+        >
+          <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-white/90 px-1.5 py-0.5 rounded-sm shadow-sm border border-amber-100">
+            Исключение
+          </span>
+        </div>
+      )}
+
+      {/* Exception post-block: custom end → regular end (amber hatch) */}
+      {excPostH > 0 && (
+        <div
+          className="absolute inset-x-0 cursor-pointer hover:brightness-95 transition-colors group"
+          style={{ top: `${excPostTop}px`, height: `${excPostH}px`, zIndex: 7, ...EXCEPTION_HATCH }}
+          onClick={(e) => { e.stopPropagation(); onDayAction?.({ doctorId: doctor.id, doctor, date }) }}
+          title="Рабочие часы сокращены исключением"
+        >
+          <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[9px] text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-white/90 px-1.5 py-0.5 rounded-sm shadow-sm border border-amber-100">
+            Исключение
+          </span>
+        </div>
+      )}
+
+      {/* Post-work blocked zone (gray hatch) */}
+      {!isDayOff && postBlockTop < GRID_H && (
         <div
           className="absolute inset-x-0 cursor-pointer hover:brightness-95 transition-colors group"
           style={{ top: `${postBlockTop}px`, bottom: 0, zIndex: 6, ...HATCH }}
@@ -346,32 +431,49 @@ export default function AppointmentGrid({
           {/* Doctor header cells — compact */}
           {doctors.map((d) => {
             const { count, loadPct } = doctorStats(appointments, d.id)
+            const wh       = workingHoursMap?.get(d.id)
+            const isDayOff = !!wh?.isDayOff
+            const isExcCus = !isDayOff && !!wh?.isException
             return (
               <div
                 key={d.id}
-                className="relative border-r border-gray-100 last:border-r-0 overflow-hidden"
+                className={`relative border-r border-gray-100 last:border-r-0 overflow-hidden ${isDayOff ? 'bg-amber-50/60' : ''}`}
                 style={{ minWidth: `${MIN_COL_W}px`, flex: '1 0 0' }}
               >
                 <div className="px-2 py-2 flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                  <div className={`w-6 h-6 rounded-full ${avatarBg(d.id)} flex items-center justify-center text-white text-[10px] font-bold shrink-0 ${isDayOff ? 'opacity-50' : ''}`}>
                     {(d.last_name ?? d.first_name ?? '?')[0]}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{fullName(d)}</p>
+                    <p className={`text-xs font-semibold truncate leading-tight ${isDayOff ? 'text-gray-400' : 'text-gray-800'}`}>{fullName(d)}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      {d.cabinet && (
-                        <span className="text-[10px] text-gray-400">Каб.{d.cabinet}</span>
-                      )}
-                      {count > 0 && (
-                        <span className="text-[10px] text-gray-500 font-medium">{count} зап.</span>
-                      )}
-                      {(d.directions ?? []).slice(0, 1).map((dir) => (
-                        <span key={dir.id} className="text-[10px] px-1 rounded bg-blue-50 text-blue-600 leading-tight">
-                          {dir.name}
+                      {isDayOff ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium leading-tight border border-amber-200 flex items-center gap-0.5">
+                          <Lock size={8} />
+                          Выходной
                         </span>
-                      ))}
-                      {(d.directions ?? []).length > 1 && (
-                        <span className="text-[10px] text-gray-400">+{d.directions.length - 1}</span>
+                      ) : (
+                        <>
+                          {isExcCus && (
+                            <span className="text-[10px] px-1 rounded bg-amber-50 text-amber-600 leading-tight border border-amber-100">
+                              Особые часы
+                            </span>
+                          )}
+                          {d.cabinet && (
+                            <span className="text-[10px] text-gray-400">Каб.{d.cabinet}</span>
+                          )}
+                          {count > 0 && (
+                            <span className="text-[10px] text-gray-500 font-medium">{count} зап.</span>
+                          )}
+                          {(d.directions ?? []).slice(0, 1).map((dir) => (
+                            <span key={dir.id} className="text-[10px] px-1 rounded bg-blue-50 text-blue-600 leading-tight">
+                              {dir.name}
+                            </span>
+                          ))}
+                          {(d.directions ?? []).length > 1 && (
+                            <span className="text-[10px] text-gray-400">+{d.directions.length - 1}</span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -381,14 +483,18 @@ export default function AppointmentGrid({
                       e.stopPropagation()
                       onDayAction?.({ doctorId: d.id, doctor: d, date })
                     }}
-                    className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-300 hover:text-gray-600 transition-colors"
+                    className={`shrink-0 p-1 rounded transition-colors ${
+                      isDayOff
+                        ? 'text-amber-400 hover:bg-amber-100 hover:text-amber-700'
+                        : 'text-gray-300 hover:bg-gray-100 hover:text-gray-600'
+                    }`}
                     title="Управление расписанием врача"
                   >
                     <MoreVertical size={13} />
                   </button>
                 </div>
                 {/* Doctor load bar */}
-                {loadPct > 0 && (
+                {loadPct > 0 && !isDayOff && (
                   <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-gray-100">
                     <div
                       className={`h-full ${loadColor(loadPct)} transition-all duration-300`}

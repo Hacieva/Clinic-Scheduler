@@ -10,7 +10,7 @@ import {
 import { ru } from 'date-fns/locale'
 import {
   ChevronLeft, ChevronRight, Plus, Check, X, SquareCheck, UserX, Users, Search,
-  Clock, XCircle, Sun, Coffee,
+  Clock, XCircle, Sun, Coffee, Lock, Trash2, AlertTriangle,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -22,7 +22,7 @@ import useBranchStore from '../../stores/branch'
 import { getDoctors } from '../../api/doctors'
 import { getAllServices, getAssignedServices } from '../../api/services'
 import { getPatients, createPatient as apiCreatePatient } from '../../api/patients'
-import { getWorkingHours, createException } from '../../api/schedule'
+import { getWorkingHours, createException, getExceptions, deleteException } from '../../api/schedule'
 import { getBranches } from '../../api/branches'
 import {
   getAppointments,
@@ -59,6 +59,18 @@ const TERMINAL = new Set(['cancelled_by_admin', 'cancelled_by_patient', 'complet
 const LEGEND_HATCH = {
   backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(107,114,128,0.12) 3px, rgba(107,114,128,0.12) 6px)',
   backgroundColor: 'rgba(243,244,246,0.8)',
+}
+
+// Exception amber hatch — mirrors AppointmentGrid EXCEPTION_HATCH
+const LEGEND_EXCEPTION_HATCH = {
+  backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(251,146,60,0.22) 3px, rgba(251,146,60,0.22) 6px)',
+  backgroundColor: 'rgba(255,247,237,0.88)',
+}
+
+// Day-off legend style
+const LEGEND_DAYOFF = {
+  backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(251,191,36,0.22) 5px, rgba(251,191,36,0.22) 10px)',
+  backgroundColor: 'rgba(255,251,235,0.9)',
 }
 
 function minsToHHMM(m) {
@@ -601,9 +613,13 @@ function DayActionMenu({ target, onClose, onApply, isLoading }) {
   const [showExtend, setShowExtend] = useState(false)
 
   useEffect(() => {
-    if (target?.workHours) {
-      setExtStart(minsToHHMM(target.workHours.startMin))
-      setExtEnd(minsToHHMM(target.workHours.endMin))
+    // Prefill extend inputs from regular (not custom-exception) hours
+    const wh = target?.workHours
+    const startMin = wh?.regularStartMin ?? wh?.startMin
+    const endMin   = wh?.regularEndMin   ?? wh?.endMin
+    if (startMin != null && endMin != null) {
+      setExtStart(minsToHHMM(startMin))
+      setExtEnd(minsToHHMM(endMin))
     } else {
       setExtStart('08:00')
       setExtEnd('21:00')
@@ -615,7 +631,12 @@ function DayActionMenu({ target, onClose, onApply, isLoading }) {
 
   const doctorName = [target.doctor?.last_name, target.doctor?.first_name]
     .filter(Boolean).join(' ')
-  const dateLabel = format(target.date, 'dd.MM.yyyy')
+  const dateLabel  = format(target.date, 'dd.MM.yyyy')
+  const ex         = target.exception   // { id, type } | null
+  const isDayOff   = ex?.type === 'day_off'
+  const isCustomEx = ex?.type === 'custom_working_hours'
+
+  const excLabel = isDayOff ? 'Выходной (исключение)' : isCustomEx ? 'Особые рабочие часы' : null
 
   return (
     <Modal isOpen={!!target} onClose={onClose} title="Управление расписанием" maxWidth="max-w-sm">
@@ -624,77 +645,105 @@ function DayActionMenu({ target, onClose, onApply, isLoading }) {
           <span className="font-medium text-gray-800">{doctorName}</span> — {dateLabel}
         </p>
 
-        {/* Close day */}
-        <button
-          onClick={() => onApply('close_day')}
-          disabled={isLoading}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-left border border-gray-100 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <XCircle size={16} className="shrink-0 text-rose-400" />
-          <div>
-            <div className="font-medium">Закрыть день</div>
-            <div className="text-xs text-gray-400">Пометить как выходной на эту дату</div>
+        {/* Active exception banner */}
+        {ex && (
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 mb-1">
+            <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-amber-800">Активное исключение: {excLabel}</p>
+              <p className="text-[10px] text-amber-600 mt-0.5">Переопределяет стандартное расписание на этот день</p>
+            </div>
+            <button
+              onClick={() => onApply('delete_exception', { id: ex.id })}
+              disabled={isLoading}
+              className="shrink-0 flex items-center gap-1 text-[10px] font-medium text-rose-600 hover:text-rose-800 bg-white border border-rose-200 hover:border-rose-400 px-2 py-1 rounded transition-colors disabled:opacity-50"
+              title="Удалить исключение"
+            >
+              <Trash2 size={10} />
+              Удалить
+            </button>
           </div>
-        </button>
+        )}
 
-        {/* Extend hours */}
-        <div className="border border-gray-100 rounded-lg overflow-hidden">
+        {/* Close day (only if no day_off exception already) */}
+        {!isDayOff && (
           <button
-            onClick={() => setShowExtend((s) => !s)}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-blue-50 transition-colors"
+            onClick={() => onApply('close_day')}
+            disabled={isLoading}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-left border border-gray-100 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Clock size={16} className="shrink-0 text-blue-400" />
-            <div className="flex-1">
-              <div className="font-medium text-gray-800">Расширить рабочие часы</div>
-              <div className="text-xs text-gray-400">Особое расписание на этот день</div>
+            <XCircle size={16} className="shrink-0 text-rose-400" />
+            <div>
+              <div className="font-medium">Закрыть день</div>
+              <div className="text-xs text-gray-400">Пометить как выходной на эту дату</div>
             </div>
-            <ChevronRight size={13} className={`text-gray-400 transition-transform ${showExtend ? 'rotate-90' : ''}`} />
           </button>
-          {showExtend && (
-            <div className="px-4 pb-3 pt-2 border-t border-gray-100 bg-gray-50 space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <label className="text-[10px] text-gray-500 block mb-1">Начало</label>
-                  <input
-                    type="time"
-                    value={extStart}
-                    onChange={(e) => setExtStart(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-[10px] text-gray-500 block mb-1">Конец</label>
-                  <input
-                    type="time"
-                    value={extEnd}
-                    onChange={(e) => setExtEnd(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
-                </div>
-              </div>
-              <button
-                onClick={() => onApply('extend', { start: extStart, end: extEnd })}
-                disabled={isLoading || !extStart || !extEnd}
-                className="w-full px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-60 transition-colors"
-              >
-                {isLoading ? 'Применение…' : 'Применить'}
-              </button>
-            </div>
-          )}
-        </div>
+        )}
 
-        {/* Vacation / day off */}
-        <button
-          onClick={() => onApply('vacation')}
-          disabled={isLoading}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-left border border-gray-100 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <Sun size={16} className="shrink-0 text-amber-400" />
-          <div>
-            <div className="font-medium">Отпуск / плановый выходной</div>
-            <div className="text-xs text-gray-400">Отметить день как нерабочий</div>
+        {/* Extend / set custom hours */}
+        {!isDayOff && (
+          <div className="border border-gray-100 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowExtend((s) => !s)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-blue-50 transition-colors"
+            >
+              <Clock size={16} className="shrink-0 text-blue-400" />
+              <div className="flex-1">
+                <div className="font-medium text-gray-800">
+                  {isCustomEx ? 'Изменить особые часы' : 'Расширить рабочие часы'}
+                </div>
+                <div className="text-xs text-gray-400">Особое расписание на этот день</div>
+              </div>
+              <ChevronRight size={13} className={`text-gray-400 transition-transform ${showExtend ? 'rotate-90' : ''}`} />
+            </button>
+            {showExtend && (
+              <div className="px-4 pb-3 pt-2 border-t border-gray-100 bg-gray-50 space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-gray-500 block mb-1">Начало</label>
+                    <input
+                      type="time"
+                      value={extStart}
+                      onChange={(e) => setExtStart(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-gray-500 block mb-1">Конец</label>
+                    <input
+                      type="time"
+                      value={extEnd}
+                      onChange={(e) => setExtEnd(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => onApply('extend', { start: extStart, end: extEnd })}
+                  disabled={isLoading || !extStart || !extEnd}
+                  className="w-full px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                >
+                  {isLoading ? 'Применение…' : 'Применить'}
+                </button>
+              </div>
+            )}
           </div>
-        </button>
+        )}
+
+        {/* Vacation / day off (only if no exception) */}
+        {!isDayOff && (
+          <button
+            onClick={() => onApply('vacation')}
+            disabled={isLoading}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-left border border-gray-100 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Sun size={16} className="shrink-0 text-amber-400" />
+            <div>
+              <div className="font-medium">Отпуск / плановый выходной</div>
+              <div className="text-xs text-gray-400">Отметить день как нерабочий</div>
+            </div>
+          </button>
+        )}
 
         {/* Break — not supported by API */}
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm border border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed select-none">
@@ -810,16 +859,96 @@ export default function ScheduleGridPage() {
   const workingHoursAllLoaded =
     workingHoursQueries.length === 0 || workingHoursQueries.every((q) => q.isFetched)
 
+  // ── Doctors that work on the selected day (need exception checks) ──
+  const workingDoctorIds = useMemo(() => {
+    if (!workingHoursAllLoaded) return []
+    return activeDoctors
+      .filter((d) => workingHoursMap.has(d.id) && workingHoursMap.get(d.id) !== null)
+      .map((d) => d.id)
+  }, [activeDoctors, workingHoursAllLoaded, workingHoursMap])
+
+  // ── Exception queries for working doctors on the selected day ──
+  const exceptionQueries = useQueries({
+    queries: workingDoctorIds.map((id) => ({
+      queryKey: ['doctor-exceptions', id, dateStr],
+      queryFn:  () => getExceptions(id, dateStr, dateStr),
+      staleTime: 2 * 60 * 1000,
+    })),
+  })
+
+  const exceptionQueriesAllLoaded =
+    exceptionQueries.length === 0 || exceptionQueries.every((q) => q.isFetched)
+
+  // ── Map: doctorId → today's exception object (or null) ──
+  const exceptionMap = useMemo(() => {
+    const map = new Map()
+    workingDoctorIds.forEach((id, i) => {
+      const data = exceptionQueries[i]?.data ?? []
+      map.set(id, data.length > 0 ? data[0] : null)
+    })
+    return map
+  }, [workingDoctorIds, exceptionQueries])
+
+  // ── Effective working hours map: enriches workingHoursMap with exception data ──
+  const effectiveWorkMap = useMemo(() => {
+    const map = new Map()
+    activeDoctors.forEach((d) => {
+      const regular = workingHoursMap.get(d.id)
+      if (regular === undefined) return   // working-hours query not yet loaded
+      const ex = exceptionMap.get(d.id) ?? null
+
+      if (!ex) {
+        map.set(d.id, regular
+          ? { ...regular, isDayOff: false, isException: false, exceptionType: null, exceptionId: null }
+          : null)
+        return
+      }
+
+      if (ex.type === 'day_off') {
+        // Only show day_off overlay if the doctor normally works this day
+        if (!regular) { map.set(d.id, null); return }
+        map.set(d.id, {
+          startMin:        regular.startMin,
+          endMin:          regular.endMin,
+          isDayOff:        true,
+          isException:     true,
+          exceptionType:   'day_off',
+          exceptionId:     ex.id,
+          regularStartMin: regular.startMin,
+          regularEndMin:   regular.endMin,
+        })
+      } else if (ex.type === 'custom_working_hours' && ex.start_time && ex.end_time) {
+        const st = parseISO(ex.start_time)
+        const et = parseISO(ex.end_time)
+        map.set(d.id, {
+          startMin:        st.getUTCHours() * 60 + st.getUTCMinutes(),
+          endMin:          et.getUTCHours() * 60 + et.getUTCMinutes(),
+          isDayOff:        false,
+          isException:     true,
+          exceptionType:   'custom_working_hours',
+          exceptionId:     ex.id,
+          regularStartMin: regular?.startMin ?? null,
+          regularEndMin:   regular?.endMin   ?? null,
+        })
+      } else {
+        map.set(d.id, regular
+          ? { ...regular, isDayOff: false, isException: false, exceptionType: null, exceptionId: null }
+          : null)
+      }
+    })
+    return map
+  }, [activeDoctors, workingHoursMap, exceptionMap])
+
   // ── Derived: visible doctor IDs (filters applied) ──
   const visibleDoctorIds = useMemo(() => {
-    if (!workingHoursAllLoaded) return null
+    if (!workingHoursAllLoaded || !exceptionQueriesAllLoaded) return null
 
     let ids = activeDoctors.map((d) => d.id)
 
-    // Hide doctors who don't work on the selected day
+    // Hide doctors who don't work on the selected day (but keep those with day_off exceptions)
     ids = ids.filter((id) => {
-      if (!workingHoursMap.has(id)) return true   // no data loaded → keep
-      return workingHoursMap.get(id) !== null
+      if (!effectiveWorkMap.has(id)) return true   // no data loaded → keep
+      return effectiveWorkMap.get(id) !== null
     })
 
     // Specialty filter
@@ -860,7 +989,8 @@ export default function ScheduleGridPage() {
 
     return ids
   }, [
-    activeDoctors, workingHoursAllLoaded, workingHoursMap,
+    activeDoctors, workingHoursAllLoaded, exceptionQueriesAllLoaded,
+    effectiveWorkMap,
     specFilter, doctorNameFilter, serviceFilter, todayAppointments,
   ])
 
@@ -926,6 +1056,7 @@ export default function ScheduleGridPage() {
     mutationFn: ({ doctorId, data }) => createException(doctorId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['doctor-working-hours'] })
+      qc.invalidateQueries({ queryKey: ['doctor-exceptions'] })
       setDayActionTarget(null)
       toast.success('Расписание обновлено')
     },
@@ -935,10 +1066,23 @@ export default function ScheduleGridPage() {
     },
   })
 
+  const deleteExcMut = useMutation({
+    mutationFn: ({ doctorId, exId }) => deleteException(doctorId, exId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['doctor-exceptions'] })
+      setDayActionTarget(null)
+      toast.success('Исключение удалено')
+    },
+    onError: () => toast.error('Не удалось удалить исключение'),
+  })
+
   // ── Handlers ──
   const handleDayAction = ({ doctorId, doctor, date: actionDate }) => {
-    const wh = workingHoursMap.get(doctorId)
-    setDayActionTarget({ doctorId, doctor, date: actionDate, workHours: wh })
+    const wh = effectiveWorkMap.get(doctorId)
+    const exception = wh?.isException
+      ? { id: wh.exceptionId, type: wh.exceptionType }
+      : null
+    setDayActionTarget({ doctorId, doctor, date: actionDate, workHours: wh, exception })
   }
 
   const handleDayApply = (action, opts) => {
@@ -952,6 +1096,8 @@ export default function ScheduleGridPage() {
         doctorId,
         data: { date: ds, type: 'custom_working_hours', start_time: opts.start, end_time: opts.end },
       })
+    } else if (action === 'delete_exception' && opts?.id) {
+      deleteExcMut.mutate({ doctorId, exId: opts.id })
     }
   }
 
@@ -1149,7 +1295,7 @@ export default function ScheduleGridPage() {
           onEventClick={handleEventClick}
           onSlotClick={handleSlotClick}
           visibleDoctorIds={visibleDoctorIds}
-          workingHoursMap={workingHoursMap}
+          workingHoursMap={effectiveWorkMap}
           onDayAction={handleDayAction}
         />
 
@@ -1190,6 +1336,14 @@ export default function ScheduleGridPage() {
             <div className="flex items-center gap-1 whitespace-nowrap">
               <div className="w-3.5 h-3 rounded-sm" style={LEGEND_HATCH} />
               <span className="text-[9px] text-gray-400">Нерабочее</span>
+            </div>
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-3.5 h-3 rounded-sm" style={LEGEND_EXCEPTION_HATCH} />
+              <span className="text-[9px] text-amber-600">Исключение</span>
+            </div>
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="w-3.5 h-3 rounded-sm" style={LEGEND_DAYOFF} />
+              <span className="text-[9px] text-amber-700">Выходной</span>
             </div>
 
             <div className="w-px h-3.5 bg-gray-200" />
@@ -1275,7 +1429,7 @@ export default function ScheduleGridPage() {
         target={dayActionTarget}
         onClose={() => setDayActionTarget(null)}
         onApply={handleDayApply}
-        isLoading={createExcMut.isPending}
+        isLoading={createExcMut.isPending || deleteExcMut.isPending}
       />
     </div>
   )
