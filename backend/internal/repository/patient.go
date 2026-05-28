@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +25,7 @@ type PatientRepository interface {
 
 type PatientFilter struct {
 	Search *string // ILIKE match against full_name, phone, email
+	Source *string // optional: 'admin_panel' | 'telegram_bot'
 	Limit  int     // clamped to [1, 100] by service; default 50
 	Offset int
 }
@@ -65,16 +68,32 @@ func scanPatient(p *model.Patient, scan func(...any) error) error {
 }
 
 func (r *PatientRepo) List(ctx context.Context, filter PatientFilter) ([]model.Patient, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT `+patientCols+`
-		FROM   patients
+	// Build query dynamically to support optional source filter.
+	// last_appointment_at is computed via correlated subquery — populated only in list responses.
+	query := `
+		SELECT p.id, p.telegram_user_id, p.telegram_username, p.full_name, p.phone,
+		       p.date_of_birth, p.email, p.comment, p.source, p.created_at, p.updated_at,
+		       (SELECT MAX(a.start_at) FROM appointments a WHERE a.patient_id = p.id) AS last_appointment_at
+		FROM   patients p
 		WHERE  ($1::text IS NULL
-		        OR full_name ILIKE '%' || $1 || '%'
-		        OR phone     ILIKE '%' || $1 || '%'
-		        OR email     ILIKE '%' || $1 || '%')
-		ORDER  BY full_name ASC
-		LIMIT  $2 OFFSET $3`,
-		filter.Search, filter.Limit, filter.Offset)
+		        OR p.full_name ILIKE '%' || $1 || '%'
+		        OR p.phone     ILIKE '%' || $1 || '%'
+		        OR p.email     ILIKE '%' || $1 || '%')`
+
+	args := []any{filter.Search}
+	n := 2
+
+	if filter.Source != nil {
+		query += fmt.Sprintf(` AND p.source = $%d`, n)
+		args = append(args, *filter.Source)
+		n++
+	}
+
+	query += ` ORDER BY p.full_name ASC`
+	query += fmt.Sprintf(` LIMIT $%s OFFSET $%s`, strconv.Itoa(n), strconv.Itoa(n+1))
+	args = append(args, filter.Limit, filter.Offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +102,13 @@ func (r *PatientRepo) List(ctx context.Context, filter PatientFilter) ([]model.P
 	result := []model.Patient{}
 	for rows.Next() {
 		var p model.Patient
-		if err := scanPatient(&p, rows.Scan); err != nil {
+		if err := rows.Scan(
+			&p.ID, &p.TelegramUserID, &p.TelegramUsername,
+			&p.FullName, &p.Phone,
+			&p.DateOfBirth, &p.Email, &p.Comment, &p.Source,
+			&p.CreatedAt, &p.UpdatedAt,
+			&p.LastAppointmentAt,
+		); err != nil {
 			return nil, err
 		}
 		result = append(result, p)

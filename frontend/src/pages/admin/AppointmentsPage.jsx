@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -350,7 +351,7 @@ const createSchema = z.object({
   patient_comment: z.string().optional(),
 })
 
-function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, isLoading, submitError }) {
+function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, isLoading, submitError, initialPhone }) {
   const qc = useQueryClient()
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm({
@@ -373,6 +374,14 @@ function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, is
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [newPatientOpen, setNewPatientOpen]   = useState(false)
   const [newName, setNewName]                 = useState('')
+
+  // Pre-fill phone from patient card "Записать пациента" action
+  useEffect(() => {
+    if (initialPhone && initialPhone !== phoneInput) {
+      setPhoneInput(initialPhone)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPhone])
 
   useEffect(() => {
     const digits = phoneInput.replace(/\D/g, '')
@@ -629,6 +638,7 @@ function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, is
 
 export default function AppointmentsPage() {
   const qc = useQueryClient()
+  const location = useLocation()
 
   // ── Filters state (separate concern) ──
   const [filters, setFilters] = useState({
@@ -644,8 +654,20 @@ export default function AppointmentsPage() {
   // ── Action targets ──
   const [cancelTarget, setCancelTarget] = useState(null)
   const [simpleAction, setSimpleAction] = useState(null) // { row, action, title, confirmLabel }
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createDoctorId, setCreateDoctorId] = useState('')
+  const [createOpen, setCreateOpen]             = useState(false)
+  const [createDoctorId, setCreateDoctorId]     = useState('')
+  const [createInitialPhone, setCreateInitialPhone] = useState('')
+
+  // Open create modal pre-filled when navigated from patient card
+  useEffect(() => {
+    if (location.state?.openCreate) {
+      setCreateOpen(true)
+      setCreateInitialPhone(location.state.patientPhone ?? '')
+      // Remove state so browser back/refresh doesn't re-open
+      window.history.replaceState({}, '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Data fetching (separate concern) ──
   const { data: appointments = [], isLoading } = useQuery({
@@ -812,6 +834,7 @@ export default function AppointmentsPage() {
         onClose={() => {
           setCreateOpen(false)
           setCreateDoctorId('')
+          setCreateInitialPhone('')
         }}
         title="Новая запись"
         maxWidth="max-w-lg"
@@ -823,6 +846,7 @@ export default function AppointmentsPage() {
           onSubmit={handleCreateSubmit}
           isLoading={createMut.isPending}
           submitError={createMut.isError ? { status: createMut.error?.response?.status, msg: createMut.error?.response?.data?.error ?? '' } : null}
+          initialPhone={createInitialPhone}
         />
       </Modal>
 

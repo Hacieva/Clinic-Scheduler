@@ -29,6 +29,9 @@ func (h *PatientHandler) List(w http.ResponseWriter, r *http.Request) {
 	if s := r.URL.Query().Get("search"); s != "" {
 		filter.Search = &s
 	}
+	if s := r.URL.Query().Get("source"); s != "" {
+		filter.Source = &s
+	}
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {

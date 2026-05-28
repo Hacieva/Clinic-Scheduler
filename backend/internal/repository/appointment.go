@@ -39,7 +39,7 @@ type CreateAppointmentInput struct {
 	CreatedByUserID         *int64
 }
 
-// AppointmentDetail is an appointment row joined with patient, doctor, and service names.
+// AppointmentDetail is an appointment row joined with patient, doctor, service, and branch names.
 // Handler layer is responsible for omitting sensitive patient fields in doctor-facing responses.
 type AppointmentDetail struct {
 	model.Appointment
@@ -48,18 +48,20 @@ type AppointmentDetail struct {
 	PatientTelegramID *int64  `json:"patient_telegram_id,omitempty"`
 	DoctorFullName    string  `json:"doctor_full_name"`
 	ServiceName       string  `json:"service_name"`
+	BranchName        *string `json:"branch_name,omitempty"`
 }
 
 // AppointmentFilter defines optional predicates and pagination for List.
 // Limit is clamped to [1, 100]; default 50.
 type AppointmentFilter struct {
-	DoctorID *int64
-	BranchID *int64
-	Status   *model.AppointmentStatus
-	DateFrom *time.Time
-	DateTo   *time.Time
-	Limit    int
-	Offset   int
+	DoctorID  *int64
+	PatientID *int64
+	BranchID  *int64
+	Status    *model.AppointmentStatus
+	DateFrom  *time.Time
+	DateTo    *time.Time
+	Limit     int
+	Offset    int
 }
 
 type AppointmentRepo struct {
@@ -179,23 +181,28 @@ func (r *AppointmentRepo) Create(ctx context.Context, input CreateAppointmentInp
 // appointmentSelectBase is the common SELECT … FROM … JOIN fragment shared by GetByID and List.
 const appointmentSelectBase = `
 	SELECT a.id, a.patient_id, a.doctor_id, a.service_id, a.direction_id,
+	       a.branch_id,
 	       a.start_at, a.end_at, a.status, a.source, a.patient_comment,
 	       a.created_at, a.updated_at,
 	       p.full_name, p.phone, p.telegram_user_id,
 	       d.first_name || ' ' || d.last_name,
-	       s.name
+	       s.name,
+	       b.name
 	FROM   appointments a
-	JOIN   patients p ON p.id = a.patient_id
-	JOIN   doctors  d ON d.id = a.doctor_id
-	JOIN   services s ON s.id = a.service_id`
+	JOIN   patients  p ON p.id = a.patient_id
+	JOIN   doctors   d ON d.id = a.doctor_id
+	JOIN   services  s ON s.id = a.service_id
+	LEFT JOIN branches b ON b.id = a.branch_id`
 
 func scanAppointmentDetail(d *AppointmentDetail, scan func(...any) error) error {
 	return scan(
 		&d.ID, &d.PatientID, &d.DoctorID, &d.ServiceID, &d.DirectionID,
+		&d.BranchID,
 		&d.StartAt, &d.EndAt, &d.Status, &d.Source, &d.PatientComment,
 		&d.CreatedAt, &d.UpdatedAt,
 		&d.PatientName, &d.PatientPhone, &d.PatientTelegramID,
 		&d.DoctorFullName, &d.ServiceName,
+		&d.BranchName,
 	)
 }
 
@@ -222,6 +229,11 @@ func (r *AppointmentRepo) List(ctx context.Context, filter AppointmentFilter) ([
 	if filter.DoctorID != nil {
 		query += fmt.Sprintf(` AND a.doctor_id = $%d`, n)
 		args = append(args, *filter.DoctorID)
+		n++
+	}
+	if filter.PatientID != nil {
+		query += fmt.Sprintf(` AND a.patient_id = $%d`, n)
+		args = append(args, *filter.PatientID)
 		n++
 	}
 	if filter.BranchID != nil {

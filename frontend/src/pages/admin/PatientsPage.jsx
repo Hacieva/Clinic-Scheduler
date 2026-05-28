@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Search, ChevronRight, UserRound, Phone, Mail, X, Plus } from 'lucide-react'
+import { Search, ChevronRight, UserRound, Phone, Mail, X, Plus, Baby, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPatients, createPatient } from '../../api/patients'
 import Modal from '../../components/Modal'
@@ -77,25 +77,44 @@ function PatientRowSkeleton() {
   )
 }
 
+function PatientTypePip({ age }) {
+  if (age === null) return null
+  if (age < 18) return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100">
+      <Baby size={9} />
+      Ребёнок
+    </span>
+  )
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-600 border border-green-100">
+      <User size={9} />
+      Взрослый
+    </span>
+  )
+}
+
+function fmtShort(iso) {
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 function PatientRow({ patient, onClick }) {
-  const age = calcAge(patient.date_of_birth)
+  const age   = calcAge(patient.date_of_birth)
   const label = ageLabel(age)
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-4 px-5 py-4 border-b border-gray-100 last:border-0 hover:bg-blue-50/50 transition-colors text-left group"
+      className="w-full flex items-center gap-4 px-5 py-3.5 border-b border-gray-100 last:border-0 hover:bg-blue-50/50 transition-colors text-left group"
     >
-      <div
-        className={`w-11 h-11 rounded-full ${avatarBg(patient.id)} flex items-center justify-center text-white text-sm font-semibold shrink-0`}
-      >
+      <div className={`w-10 h-10 rounded-full ${avatarBg(patient.id)} flex items-center justify-center text-white text-sm font-semibold shrink-0`}>
         {initials(patient.full_name)}
       </div>
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-900 truncate">{patient.full_name}</p>
-        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+        <div className="flex items-center gap-2.5 mt-0.5 flex-wrap">
           <a
             href={`tel:${patient.phone}`}
             onClick={(e) => e.stopPropagation()}
@@ -105,32 +124,28 @@ function PatientRow({ patient, onClick }) {
             {patient.phone}
           </a>
           {patient.email && (
-            <span className="flex items-center gap-1 text-xs text-gray-400 truncate max-w-[160px]">
+            <span className="flex items-center gap-1 text-xs text-gray-400 truncate max-w-[140px]">
               <Mail size={11} />
               {patient.email}
             </span>
           )}
+          {label && <span className="text-xs text-gray-400">{label}</span>}
+          <PatientTypePip age={age} />
         </div>
       </div>
 
-      <div className="hidden sm:flex flex-col items-end gap-1.5 shrink-0">
-        <div className="flex items-center gap-2">
-          {label && (
-            <span className="text-xs text-gray-500 font-medium">{label}</span>
-          )}
-          <SourceBadge source={patient.source} />
-        </div>
-        <span className="text-xs text-gray-400">
-          {new Date(patient.created_at).toLocaleDateString('ru-RU', {
-            day: 'numeric', month: 'short', year: 'numeric',
-          })}
-        </span>
+      <div className="hidden sm:flex flex-col items-end gap-1.5 shrink-0 min-w-[110px]">
+        <SourceBadge source={patient.source} />
+        {patient.last_appointment_at ? (
+          <span className="text-[10px] text-gray-400 tabular-nums">
+            Посл.: {fmtShort(patient.last_appointment_at)}
+          </span>
+        ) : (
+          <span className="text-[10px] text-gray-300 italic">Не записывался</span>
+        )}
       </div>
 
-      <ChevronRight
-        size={16}
-        className="text-gray-300 group-hover:text-blue-400 transition-colors shrink-0 ml-1"
-      />
+      <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-400 transition-colors shrink-0 ml-1" />
     </button>
   )
 }

@@ -28,12 +28,13 @@ type Appointment struct {
 	PatientID      int64             `json:"patient_id"`
 	DoctorID       int64             `json:"doctor_id"`
 	ServiceID      int64             `json:"service_id"`
-	DirectionID    *int64            `json:"direction_id"`
+	DirectionID    *int64            `json:"direction_id,omitempty"`
+	BranchID       *int64            `json:"branch_id,omitempty"`
 	StartAt        time.Time         `json:"start_at"`
 	EndAt          time.Time         `json:"end_at"`
 	Status         AppointmentStatus `json:"status"`
 	Source         AppointmentSource `json:"source"`
-	PatientComment *string           `json:"patient_comment"`
+	PatientComment *string           `json:"patient_comment,omitempty"`
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 }
