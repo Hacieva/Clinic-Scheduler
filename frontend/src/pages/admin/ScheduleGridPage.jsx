@@ -65,6 +65,18 @@ function minsToHHMM(m) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
+// Converts datetime-local value ("2026-05-29T10:30") to RFC3339 with local offset
+// so the backend receives "2026-05-29T10:30:00+03:00" and can compare against
+// working hours stored as local clock times.
+function toLocalRFC3339(val) {
+  const offsetMin = new Date().getTimezoneOffset()
+  const sign = offsetMin <= 0 ? '+' : '-'
+  const abs = Math.abs(offsetMin)
+  const h = String(Math.floor(abs / 60)).padStart(2, '0')
+  const m = String(abs % 60).padStart(2, '0')
+  return `${val}:00${sign}${h}:${m}`
+}
+
 const AVATAR_COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-violet-500',
   'bg-amber-500', 'bg-rose-500', 'bg-cyan-500',
@@ -155,7 +167,7 @@ const createSchema = z.object({
   patient_comment: z.string().optional(),
 })
 
-function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStartAt, onClose }) {
+function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStartAt, onClose, submitError }) {
   const navigate = useNavigate()
   const qc       = useQueryClient()
 
@@ -179,50 +191,63 @@ function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStar
     enabled:  !!watchedDoctorId,
   })
 
-  const [patientSearch, setPatientSearch] = useState('')
-  const [patientQuery,  setPatientQuery]  = useState('')
-  const [showDropdown,  setShowDropdown]  = useState(false)
-  const [selectedIndex, setSelectedIndex] = useState(-1)
-  const containerRef = useRef(null)
+  // ── Phone-first patient search ──
+  const [phoneInput, setPhoneInput]       = useState('')
+  const [phoneQuery, setPhoneQuery]       = useState('')
+  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [newPatientOpen, setNewPatientOpen]   = useState(false)
+  const [newName, setNewName]             = useState('')
 
+  // Debounce phone → search query (fires at 10+ digits)
   useEffect(() => {
-    const t = setTimeout(() => setPatientQuery(patientSearch), 300)
+    const digits = phoneInput.replace(/\D/g, '')
+    const t = setTimeout(() => setPhoneQuery(digits.length >= 10 ? digits : ''), 400)
     return () => clearTimeout(t)
-  }, [patientSearch])
+  }, [phoneInput])
 
-  const { data: patientResults = [] } = useQuery({
-    queryKey: ['patient-search', patientQuery],
-    queryFn:  () => getPatients({ search: patientQuery, limit: 5 }),
-    enabled:  patientQuery.trim().length >= 2,
+  // When query clears → reset patient state
+  useEffect(() => {
+    if (!phoneQuery) {
+      setSelectedPatient(null)
+      setNewPatientOpen(false)
+      setValue('patient_name', '')
+    }
+  }, [phoneQuery, setValue])
+
+  const { data: phoneSearchResults = [], isFetching: phoneFetching } = useQuery({
+    queryKey: ['patient-phone-search', phoneQuery],
+    queryFn:  () => getPatients({ search: phoneQuery, limit: 5 }),
+    enabled:  phoneQuery.length >= 10,
   })
 
-  useEffect(() => { setSelectedIndex(-1) }, [patientResults])
-
+  // Auto-open new-patient form when phone search yields no results
   useEffect(() => {
-    const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setShowDropdown(false)
-        setSelectedIndex(-1)
-      }
+    if (phoneQuery.length >= 10 && !phoneFetching && phoneSearchResults.length === 0 && !selectedPatient) {
+      setNewPatientOpen(true)
+      setNewName('')
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+    if (!phoneQuery) setNewPatientOpen(false)
+  }, [phoneQuery, phoneFetching, phoneSearchResults.length, selectedPatient])
 
-  const [showNewPatient, setShowNewPatient] = useState(false)
-  const [newName,  setNewName]  = useState('')
-  const [newPhone, setNewPhone] = useState('')
+  const selectPhonePatient = (p) => {
+    setSelectedPatient(p)
+    setNewPatientOpen(false)
+    setNewName('')
+    const phone = p.phone ?? phoneInput
+    if (p.phone) setPhoneInput(p.phone)
+    setValue('patient_name',  p.full_name ?? '')
+    setValue('patient_phone', phone)
+  }
 
   const newPatientMut = useMutation({
-    mutationFn: () => apiCreatePatient({ full_name: newName, phone: newPhone }),
+    mutationFn: () => apiCreatePatient({ full_name: newName, phone: phoneInput }),
     onSuccess: (patient) => {
-      setValue('patient_name',  patient.full_name ?? '')
-      setValue('patient_phone', patient.phone ?? '')
-      setPatientSearch(patient.full_name ?? '')
-      setShowNewPatient(false)
+      setSelectedPatient(patient)
+      setNewPatientOpen(false)
       setNewName('')
-      setNewPhone('')
-      qc.invalidateQueries({ queryKey: ['patient-search'] })
+      setValue('patient_name',  patient.full_name ?? '')
+      setValue('patient_phone', patient.phone ?? phoneInput)
+      qc.invalidateQueries({ queryKey: ['patient-phone-search'] })
       toast.success('Пациент создан')
     },
     onError: () => toast.error('Не удалось создать пациента'),
@@ -230,47 +255,6 @@ function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStar
 
   const capitalizeWords = (val) => val.replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
 
-  const highlight = (text, query) => {
-    if (!query || query.length < 2) return text
-    const idx = text.toLowerCase().indexOf(query.toLowerCase())
-    if (idx === -1) return text
-    return (
-      <>
-        {text.slice(0, idx)}
-        <mark className="bg-yellow-100 text-yellow-900 not-italic font-semibold rounded-sm">
-          {text.slice(idx, idx + query.length)}
-        </mark>
-        {text.slice(idx + query.length)}
-      </>
-    )
-  }
-
-  const handleKeyDown = (e) => {
-    if (!showDropdown || patientResults.length === 0) return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedIndex((i) => Math.min(i + 1, patientResults.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedIndex((i) => Math.max(i - 1, -1))
-    } else if (e.key === 'Enter' && selectedIndex >= 0) {
-      e.preventDefault()
-      selectPatient(patientResults[selectedIndex])
-    } else if (e.key === 'Escape') {
-      setShowDropdown(false)
-      setSelectedIndex(-1)
-    }
-  }
-
-  const selectPatient = (p) => {
-    setValue('patient_name',  p.full_name ?? '')
-    setValue('patient_phone', p.phone ?? '')
-    setPatientSearch(p.full_name ?? '')
-    setShowDropdown(false)
-    setSelectedIndex(-1)
-  }
-
-  const { ref: patientNameRef } = register('patient_name')
   const { onChange: rhfDoctorChange, ...restDoctor } = register('doctor_id')
 
   const selectedDoctor = doctors.find((d) => d.id === Number(initialDoctorId))
@@ -281,29 +265,86 @@ function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStar
 
   const noServicesAndSelected = !!watchedDoctorId && !servicesFetching && assignedServices.length === 0
 
+  const fmtSvcOption = (s) => {
+    const parts = [s.name, `${s.duration_minutes} мин`]
+    if (s.price != null) parts.push(`${(s.price / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0 })} ₽`)
+    if (s.patient_type === 'adult') parts.push('(Взросл.)')
+    else if (s.patient_type === 'child') parts.push('(Дети)')
+    return parts.join(' — ')
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 
-      {/* ── Patient ── */}
+      {/* Hidden RHF fields — values set via setValue */}
+      <input type="hidden" {...register('patient_name')} />
+      <input type="hidden" {...register('patient_phone')} />
+
+      {/* ── Phone-first patient lookup ── */}
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-sm font-medium text-gray-700">
-            Пациент <span className="text-red-500">*</span>
-          </label>
-          {!showNewPatient && (
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Телефон пациента <span className="text-red-500">*</span>
+        </label>
+
+        {selectedPatient ? (
+          <div className="flex items-center gap-2 border border-green-300 bg-green-50 rounded-lg px-3 py-2">
+            <div className="flex-1">
+              <span className="text-sm font-medium text-green-900">{selectedPatient.full_name}</span>
+              <span className="ml-2 text-xs text-green-600">{phoneInput}</span>
+            </div>
             <button
               type="button"
-              onClick={() => setShowNewPatient(true)}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+              onClick={() => {
+                setSelectedPatient(null)
+                setPhoneInput('')
+                setNewName('')
+                setNewPatientOpen(false)
+                setValue('patient_name',  '')
+                setValue('patient_phone', '')
+              }}
+              className="text-green-600 hover:text-red-500 transition-colors"
             >
-              + Новый пациент
+              <X size={14} />
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="tel"
+              value={phoneInput}
+              onChange={(e) => {
+                setPhoneInput(e.target.value)
+                setValue('patient_phone', e.target.value)
+              }}
+              placeholder="+7 (999) 000-00-00"
+              autoFocus
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {phoneFetching && (
+              <span className="absolute right-3 top-2.5 text-xs text-gray-400">Поиск…</span>
+            )}
+            {phoneQuery.length >= 10 && !phoneFetching && phoneSearchResults.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                {phoneSearchResults.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseDown={() => selectPhonePatient(p)}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900">{p.full_name}</span>
+                    {p.phone && <span className="ml-2 text-xs text-gray-400">{p.phone}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-        {showNewPatient ? (
-          <div className="border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-2">
-            <p className="text-xs font-semibold text-blue-800">Создать нового пациента</p>
+        {/* Inline new-patient form — auto-opens when phone not found */}
+        {newPatientOpen && !selectedPatient && (
+          <div className="mt-2 border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">Номер не найден — новый пациент</p>
             <input
               type="text"
               value={newName}
@@ -311,85 +352,21 @@ function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStar
               placeholder="ФИО *"
               className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <input
-              type="tel"
-              value={newPhone}
-              onChange={(e) => setNewPhone(e.target.value)}
-              placeholder="Телефон *"
-              className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => newPatientMut.mutate()}
-                disabled={!newName.trim() || !newPhone.trim() || newPatientMut.isPending}
-                className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 transition-colors"
-              >
-                {newPatientMut.isPending ? 'Создание…' : 'Создать и выбрать'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowNewPatient(false); setNewName(''); setNewPhone('') }}
-                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-900"
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="relative" ref={containerRef}>
-              <input
-                ref={patientNameRef}
-                type="text"
-                value={patientSearch}
-                onChange={(e) => {
-                  const val = capitalizeWords(e.target.value)
-                  setPatientSearch(val)
-                  setValue('patient_name', val)
-                  setShowDropdown(true)
-                }}
-                onFocus={() => patientQuery.trim().length >= 2 && setShowDropdown(true)}
-                onKeyDown={handleKeyDown}
-                placeholder="Введите ФИО или телефон…"
-                autoComplete="off"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {showDropdown && patientResults.length > 0 && (
-                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                  {patientResults.map((p, idx) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onMouseDown={() => selectPatient(p)}
-                      className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-b-0 transition-colors ${
-                        idx === selectedIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="font-medium text-gray-900">
-                        {highlight(p.full_name, patientQuery)}
-                      </span>
-                      {p.phone && <span className="text-gray-400 ml-2 text-xs">{p.phone}</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <input
-                type="tel"
-                placeholder="Телефон *"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                {...register('patient_phone')}
-              />
-              {errors.patient_phone && (
-                <p className="mt-1 text-xs text-red-600">{errors.patient_phone.message}</p>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => newPatientMut.mutate()}
+              disabled={!newName.trim() || newPatientMut.isPending}
+              className="w-full px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 transition-colors"
+            >
+              {newPatientMut.isPending ? 'Создание…' : 'Создать и выбрать'}
+            </button>
           </div>
         )}
-        {!showNewPatient && errors.patient_name && (
-          <p className="mt-1 text-xs text-red-600">{errors.patient_name.message}</p>
+
+        {(errors.patient_phone || errors.patient_name) && !selectedPatient && (
+          <p className="mt-1 text-xs text-red-600">
+            {errors.patient_phone?.message ?? errors.patient_name?.message}
+          </p>
         )}
       </div>
 
@@ -453,9 +430,7 @@ function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStar
               {!watchedDoctorId ? 'Сначала выберите врача' : servicesFetching ? 'Загрузка…' : 'Выберите услугу'}
             </option>
             {assignedServices.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.duration_minutes} мин)
-              </option>
+              <option key={s.id} value={s.id}>{fmtSvcOption(s)}</option>
             ))}
           </select>
         )}
@@ -476,6 +451,12 @@ function CreateForm({ doctors, onSubmit, isLoading, initialDoctorId, initialStar
         />
         {errors.start_at && (
           <p className="mt-1 text-xs text-red-600">{errors.start_at.message}</p>
+        )}
+        {submitError?.status === 409 && (
+          <p className="mt-1 text-xs text-red-600 font-medium">Время уже занято. Выберите другой слот.</p>
+        )}
+        {submitError?.status === 422 && submitError.msg?.includes('outside') && (
+          <p className="mt-1 text-xs text-red-600 font-medium">Врач не работает в это время.</p>
         )}
         <p className="mt-1 text-xs text-gray-400">Длительность рассчитывается по услуге</p>
       </div>
@@ -908,12 +889,12 @@ export default function ScheduleGridPage() {
       toast.success('Запись создана')
     },
     onError: (err) => {
-      const msg = err?.response?.data?.error ?? ''
+      const msg    = err?.response?.data?.error ?? ''
       const status = err?.response?.status
-      if (status === 409) toast.error('Время уже занято. Выберите другой слот.')
-      else if (status === 422 && msg.includes('inactive')) toast.error('Врач неактивен.')
-      else if (status === 422 && msg.includes('outside')) toast.error('Время вне рабочих часов врача.')
-      else toast.error('Не удалось создать запись.')
+      if (status === 409) toast.error('Время уже занято. Выберите другой слот.', { duration: 5000 })
+      else if (status === 422 && msg.includes('inactive')) toast.error('Врач неактивен.', { duration: 5000 })
+      else if (status === 422 && msg.includes('outside')) toast.error('Врач не работает в это время.', { duration: 5000 })
+      else toast.error('Не удалось создать запись.', { duration: 5000 })
     },
   })
 
@@ -997,7 +978,7 @@ export default function ScheduleGridPage() {
       patient_phone: data.patient_phone,
       doctor_id:     Number(data.doctor_id),
       service_id:    Number(data.service_id),
-      start_at:      `${data.start_at.slice(0, 16)}:00.000Z`,
+      start_at:      toLocalRFC3339(data.start_at),
       ...(data.patient_comment ? { patient_comment: data.patient_comment } : {}),
     })
   }
@@ -1149,7 +1130,11 @@ export default function ScheduleGridPage() {
           <div className="flex-1" />
 
           <button
-            onClick={() => setCreateModal({ doctorId: null, startAt: null })}
+            onClick={() => {
+              const ids = visibleDoctorIds !== null ? visibleDoctorIds : activeDoctors.map((d) => d.id)
+              const singleId = ids.length === 1 ? ids[0] : null
+              setCreateModal({ doctorId: singleId, startAt: `${format(date, 'yyyy-MM-dd')}T09:00` })
+            }}
             className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={15} />
@@ -1263,6 +1248,7 @@ export default function ScheduleGridPage() {
             initialDoctorId={createModal.doctorId}
             initialStartAt={createModal.startAt}
             onClose={() => setCreateModal(null)}
+            submitError={createMut.isError ? { status: createMut.error?.response?.status, msg: createMut.error?.response?.data?.error ?? '' } : null}
           />
         )}
       </Modal>

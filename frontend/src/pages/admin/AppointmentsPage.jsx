@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,6 +16,7 @@ import {
 } from '../../api/appointments'
 import { getDoctors } from '../../api/doctors'
 import { getAssignedServices } from '../../api/services'
+import { getPatients, createPatient as apiCreatePatient } from '../../api/patients'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -77,6 +78,18 @@ function fmtDateTime(iso) {
   } catch {
     return iso
   }
+}
+
+// Converts datetime-local value ("2026-05-29T10:30") to RFC3339 with local offset
+// so the backend receives "2026-05-29T10:30:00+03:00" and can compare against
+// working hours stored as local clock times.
+function toLocalRFC3339(val) {
+  const offsetMin = new Date().getTimezoneOffset()
+  const sign = offsetMin <= 0 ? '+' : '-'
+  const abs = Math.abs(offsetMin)
+  const h = String(Math.floor(abs / 60)).padStart(2, '0')
+  const m = String(abs % 60).padStart(2, '0')
+  return `${val}:00${sign}${h}:${m}`
 }
 
 function sourceLabel(src) {
@@ -326,7 +339,7 @@ function CancelModal({ target, onClose, onConfirm, isLoading }) {
   )
 }
 
-// ─── CreateAppointmentForm (dumb — no API calls) ──────────────────────────────
+// ─── CreateAppointmentForm ────────────────────────────────────────────────────
 
 const createSchema = z.object({
   patient_name: z.string().min(1, 'Введите ФИО пациента'),
@@ -337,57 +350,189 @@ const createSchema = z.object({
   patient_comment: z.string().optional(),
 })
 
-function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, isLoading }) {
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm({
+function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, isLoading, submitError }) {
+  const qc = useQueryClient()
+
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm({
     resolver: zodResolver(createSchema),
     defaultValues: {
-      doctor_id: '',
-      service_id: '',
-      patient_name: '',
-      patient_phone: '',
-      start_at: '',
+      doctor_id:       '',
+      service_id:      '',
+      patient_name:    '',
+      patient_phone:   '',
+      start_at:        `${format(new Date(), 'yyyy-MM-dd')}T09:00`,
       patient_comment: '',
     },
   })
 
   const { onChange: rhfDoctorChange, ...restDoctor } = register('doctor_id')
 
+  // ── Phone-first patient search ──
+  const [phoneInput, setPhoneInput]           = useState('')
+  const [phoneQuery, setPhoneQuery]           = useState('')
+  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [newPatientOpen, setNewPatientOpen]   = useState(false)
+  const [newName, setNewName]                 = useState('')
+
+  useEffect(() => {
+    const digits = phoneInput.replace(/\D/g, '')
+    const t = setTimeout(() => setPhoneQuery(digits.length >= 10 ? digits : ''), 400)
+    return () => clearTimeout(t)
+  }, [phoneInput])
+
+  useEffect(() => {
+    if (!phoneQuery) {
+      setSelectedPatient(null)
+      setNewPatientOpen(false)
+      setValue('patient_name', '')
+    }
+  }, [phoneQuery, setValue])
+
+  const { data: phoneSearchResults = [], isFetching: phoneFetching } = useQuery({
+    queryKey: ['patient-phone-search-appt', phoneQuery],
+    queryFn:  () => getPatients({ search: phoneQuery, limit: 5 }),
+    enabled:  phoneQuery.length >= 10,
+  })
+
+  useEffect(() => {
+    if (phoneQuery.length >= 10 && !phoneFetching && phoneSearchResults.length === 0 && !selectedPatient) {
+      setNewPatientOpen(true)
+      setNewName('')
+    }
+    if (!phoneQuery) setNewPatientOpen(false)
+  }, [phoneQuery, phoneFetching, phoneSearchResults.length, selectedPatient])
+
+  const selectPhonePatient = (p) => {
+    setSelectedPatient(p)
+    setNewPatientOpen(false)
+    setNewName('')
+    const phone = p.phone ?? phoneInput
+    if (p.phone) setPhoneInput(p.phone)
+    setValue('patient_name',  p.full_name ?? '')
+    setValue('patient_phone', phone)
+  }
+
+  const newPatientMut = useMutation({
+    mutationFn: () => apiCreatePatient({ full_name: newName, phone: phoneInput }),
+    onSuccess: (patient) => {
+      setSelectedPatient(patient)
+      setNewPatientOpen(false)
+      setNewName('')
+      setValue('patient_name',  patient.full_name ?? '')
+      setValue('patient_phone', patient.phone ?? phoneInput)
+      qc.invalidateQueries({ queryKey: ['patient-phone-search-appt'] })
+      toast.success('Пациент создан')
+    },
+    onError: () => toast.error('Не удалось создать пациента'),
+  })
+
+  const capitalizeWords = (val) => val.replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
+
+  const fmtSvcOption = (s) => {
+    const parts = [s.name, `${s.duration_minutes} мин`]
+    if (s.price != null) parts.push(`${(s.price / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0 })} ₽`)
+    if (s.patient_type === 'adult') parts.push('(Взросл.)')
+    else if (s.patient_type === 'child') parts.push('(Дети)')
+    return parts.join(' — ')
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            ФИО пациента <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            {...register('patient_name')}
-          />
-          {errors.patient_name && (
-            <p className="mt-1 text-xs text-red-600">{errors.patient_name.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Телефон <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="tel"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            {...register('patient_phone')}
-          />
-          {errors.patient_phone && (
-            <p className="mt-1 text-xs text-red-600">{errors.patient_phone.message}</p>
-          )}
-        </div>
+
+      {/* Hidden RHF fields */}
+      <input type="hidden" {...register('patient_name')} />
+      <input type="hidden" {...register('patient_phone')} />
+
+      {/* ── Phone-first patient lookup ── */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Телефон пациента <span className="text-red-500">*</span>
+        </label>
+
+        {selectedPatient ? (
+          <div className="flex items-center gap-2 border border-green-300 bg-green-50 rounded-lg px-3 py-2">
+            <div className="flex-1">
+              <span className="text-sm font-medium text-green-900">{selectedPatient.full_name}</span>
+              <span className="ml-2 text-xs text-green-600">{phoneInput}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPatient(null)
+                setPhoneInput('')
+                setNewName('')
+                setNewPatientOpen(false)
+                setValue('patient_name',  '')
+                setValue('patient_phone', '')
+              }}
+              className="text-green-600 hover:text-red-500 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              type="tel"
+              value={phoneInput}
+              onChange={(e) => {
+                setPhoneInput(e.target.value)
+                setValue('patient_phone', e.target.value)
+              }}
+              placeholder="+7 (999) 000-00-00"
+              autoFocus
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {phoneFetching && (
+              <span className="absolute right-3 top-2.5 text-xs text-gray-400">Поиск…</span>
+            )}
+            {phoneQuery.length >= 10 && !phoneFetching && phoneSearchResults.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                {phoneSearchResults.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseDown={() => selectPhonePatient(p)}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900">{p.full_name}</span>
+                    {p.phone && <span className="ml-2 text-xs text-gray-400">{p.phone}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {newPatientOpen && !selectedPatient && (
+          <div className="mt-2 border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">Номер не найден — новый пациент</p>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(capitalizeWords(e.target.value))}
+              placeholder="ФИО *"
+              className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              onClick={() => newPatientMut.mutate()}
+              disabled={!newName.trim() || newPatientMut.isPending}
+              className="w-full px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 transition-colors"
+            >
+              {newPatientMut.isPending ? 'Создание…' : 'Создать и выбрать'}
+            </button>
+          </div>
+        )}
+
+        {(errors.patient_phone || errors.patient_name) && !selectedPatient && (
+          <p className="mt-1 text-xs text-red-600">
+            {errors.patient_phone?.message ?? errors.patient_name?.message}
+          </p>
+        )}
       </div>
 
+      {/* ── Doctor ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Врач <span className="text-red-500">*</span>
@@ -413,6 +558,7 @@ function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, is
         )}
       </div>
 
+      {/* ── Service ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Услуга <span className="text-red-500">*</span>
@@ -426,9 +572,7 @@ function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, is
             {services.length === 0 ? 'Сначала выберите врача' : 'Выберите услугу'}
           </option>
           {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.duration_minutes} мин)
-            </option>
+            <option key={s.id} value={s.id}>{fmtSvcOption(s)}</option>
           ))}
         </select>
         {errors.service_id && (
@@ -436,28 +580,34 @@ function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, is
         )}
       </div>
 
+      {/* ── Date/time ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Дата и время начала <span className="text-red-500">*</span>
         </label>
         <input
           type="datetime-local"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           {...register('start_at')}
         />
         {errors.start_at && (
           <p className="mt-1 text-xs text-red-600">{errors.start_at.message}</p>
         )}
-        <p className="mt-1 text-xs text-gray-500">
-          Длительность и время окончания рассчитываются автоматически по выбранной услуге.
-        </p>
+        {submitError?.status === 409 && (
+          <p className="mt-1 text-xs text-red-600 font-medium">Время уже занято. Выберите другой слот.</p>
+        )}
+        {submitError?.status === 422 && submitError.msg?.includes('outside') && (
+          <p className="mt-1 text-xs text-red-600 font-medium">Врач не работает в это время.</p>
+        )}
+        <p className="mt-1 text-xs text-gray-400">Длительность рассчитывается по услуге</p>
       </div>
 
+      {/* ── Comment ── */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
         <input
           type="text"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           {...register('patient_comment')}
         />
       </div>
@@ -468,7 +618,7 @@ function CreateAppointmentForm({ doctors, services, onDoctorChange, onSubmit, is
           disabled={isLoading}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
         >
-          {isLoading ? 'Создание...' : 'Создать запись'}
+          {isLoading ? 'Создание…' : 'Создать запись'}
         </button>
       </div>
     </form>
@@ -527,16 +677,16 @@ export default function AppointmentsPage() {
       toast.success('Запись создана')
     },
     onError: (err) => {
-      const msg = err?.response?.data?.error ?? ''
+      const msg    = err?.response?.data?.error ?? ''
       const status = err?.response?.status
-      if (status === 409 && msg.includes('slot')) {
-        toast.error('Время уже занято. Выберите другой слот.')
+      if (status === 409) {
+        toast.error('Время уже занято. Выберите другой слот.', { duration: 5000 })
       } else if (status === 422 && msg.includes('inactive')) {
-        toast.error('Врач неактивен.')
+        toast.error('Врач неактивен.', { duration: 5000 })
       } else if (status === 422 && msg.includes('outside')) {
-        toast.error('Время вне рабочих часов врача.')
+        toast.error('Врач не работает в это время.', { duration: 5000 })
       } else {
-        toast.error('Не удалось создать запись.')
+        toast.error('Не удалось создать запись.', { duration: 5000 })
       }
     },
   })
@@ -621,7 +771,7 @@ export default function AppointmentsPage() {
       patient_phone: data.patient_phone,
       doctor_id: Number(data.doctor_id),
       service_id: Number(data.service_id),
-      start_at: new Date(data.start_at).toISOString(),
+      start_at: toLocalRFC3339(data.start_at),
       ...(data.patient_comment ? { patient_comment: data.patient_comment } : {}),
     })
   }
@@ -672,6 +822,7 @@ export default function AppointmentsPage() {
           onDoctorChange={setCreateDoctorId}
           onSubmit={handleCreateSubmit}
           isLoading={createMut.isPending}
+          submitError={createMut.isError ? { status: createMut.error?.response?.status, msg: createMut.error?.response?.data?.error ?? '' } : null}
         />
       </Modal>
 
