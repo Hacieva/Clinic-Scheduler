@@ -96,9 +96,14 @@ func main() {
 	patientSvc := service.NewPatientService(patientRepo)
 	patientHandler := handler.NewPatientHandler(patientSvc)
 
+	visitRepo := repository.NewVisitRepo(pool)
+
 	apptRepo := repository.NewAppointmentRepo(pool)
-	apptSvc := service.NewAppointmentService(apptRepo, doctorRepo, serviceRepo, doctorSvcRepo, scheduleRepo)
+	apptSvc := service.NewAppointmentService(apptRepo, visitRepo, doctorRepo, serviceRepo, doctorSvcRepo, scheduleRepo)
 	apptHandler := handler.NewAppointmentHandler(apptSvc)
+
+	visitSvc := service.NewVisitService(visitRepo, apptRepo, patientRepo, doctorRepo, serviceRepo, doctorSvcRepo)
+	visitHandler := handler.NewVisitHandler(visitSvc)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.Logger)
@@ -219,6 +224,12 @@ func main() {
 				r.Post("/appointments/{id}/cancel", apptHandler.AdminCancel)
 				r.Post("/appointments/{id}/complete", apptHandler.Complete)
 				r.Post("/appointments/{id}/no-show", apptHandler.MarkNoShow)
+				r.Post("/appointments/{id}/arrive", apptHandler.Arrive)
+
+				// Visit endpoints (walk-in + visit lifecycle).
+				r.Post("/visits", visitHandler.RegisterWalkIn)
+				r.Get("/visits", visitHandler.List)
+				r.Get("/visits/{id}", visitHandler.GetByID)
 			})
 		})
 	})

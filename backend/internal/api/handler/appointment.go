@@ -31,7 +31,9 @@ type createAppointmentRequest struct {
 	PatientPhone            string  `json:"patient_phone"`
 	DoctorID                int64   `json:"doctor_id"`
 	ServiceID               int64   `json:"service_id"`
-	StartAt                 string  `json:"start_at"` // RFC3339
+	BranchID                *int64  `json:"branch_id"`
+	VisitID                 *int64  `json:"visit_id"`  // attach to existing visit
+	StartAt                 string  `json:"start_at"`  // RFC3339
 	PatientComment          *string `json:"patient_comment"`
 }
 
@@ -67,20 +69,42 @@ func (h *AppointmentHandler) AdminCreate(w http.ResponseWriter, r *http.Request)
 	}
 	uid := claims.UserID
 	appt, err := h.svc.Create(r.Context(), service.CreateAppointmentInput{
-		PatientName:     req.PatientName,
-		PatientPhone:    req.PatientPhone,
-		DoctorID:        req.DoctorID,
-		ServiceID:       req.ServiceID,
-		StartAt:         startAt,
-		Source:          model.SourceAdminPanel,
-		PatientComment:  req.PatientComment,
-		CreatedByUserID: &uid,
+		PatientTelegramID:       req.PatientTelegramID,
+		PatientTelegramUsername: req.PatientTelegramUsername,
+		PatientName:             req.PatientName,
+		PatientPhone:            req.PatientPhone,
+		DoctorID:                req.DoctorID,
+		ServiceID:               req.ServiceID,
+		BranchID:                req.BranchID,
+		VisitID:                 req.VisitID,
+		StartAt:                 startAt,
+		Source:                  model.SourceAdminPanel,
+		PatientComment:          req.PatientComment,
+		CreatedByUserID:         &uid,
 	})
 	if err != nil {
 		writeAppointmentError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, appt)
+}
+
+func (h *AppointmentHandler) Arrive(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	uid := claims.UserID
+	if err := h.svc.Arrive(r.Context(), id, &uid); err != nil {
+		writeAppointmentError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *AppointmentHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -342,6 +366,15 @@ func parseAppointmentFilter(w http.ResponseWriter, r *http.Request) (repository.
 		filter.PatientID = &id
 	}
 
+	if v := q.Get("visit_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid visit_id"})
+			return filter, false
+		}
+		filter.VisitID = &id
+	}
+
 	if v := q.Get("branch_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || id <= 0 {
@@ -409,6 +442,10 @@ func writeAppointmentError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "appointment time is outside working hours"})
 	case errors.Is(err, apperrors.ErrInvalidStatusTransition):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "invalid status transition"})
+	case errors.Is(err, apperrors.ErrInvalidBookingMode):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "booking mode does not allow this appointment type"})
+	case errors.Is(err, apperrors.ErrVisitPatientMismatch):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "visit does not belong to this patient or branch"})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 	}

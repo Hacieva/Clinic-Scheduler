@@ -25,6 +25,9 @@ type AppointmentRepository interface {
 // CreateAppointmentInput carries all data needed to atomically create an appointment.
 // EndAt and DirectionID are computed by the service layer before calling Create.
 type CreateAppointmentInput struct {
+	// PatientID, when set, skips the patient upsert step in the transaction.
+	// Used by walk-in flow where patient is resolved in the service layer first.
+	PatientID               *int64
 	PatientTelegramID       *int64
 	PatientTelegramUsername *string
 	PatientName             string
@@ -32,6 +35,9 @@ type CreateAppointmentInput struct {
 	DoctorID                int64
 	ServiceID               int64
 	DirectionID             *int64
+	BranchID                *int64
+	VisitID                 *int64          // if nil, auto-created for scheduled; must be set for walk-in
+	AppointmentType         model.AppointmentType
 	StartAt                 time.Time
 	EndAt                   time.Time
 	Source                  model.AppointmentSource
@@ -56,6 +62,7 @@ type AppointmentDetail struct {
 type AppointmentFilter struct {
 	DoctorID  *int64
 	PatientID *int64
+	VisitID   *int64
 	BranchID  *int64
 	Status    *model.AppointmentStatus
 	DateFrom  *time.Time
@@ -73,14 +80,21 @@ func NewAppointmentRepo(db *pgxpool.Pool) *AppointmentRepo {
 }
 
 // Create runs a full atomic transaction:
-//  1. Pessimistic conflict check via SELECT … FOR UPDATE
+//  1. Pessimistic conflict check (scheduled only) via SELECT … FOR UPDATE
 //  2. Patient upsert (telegram path) or plain INSERT (admin-panel path)
-//  3. INSERT appointment
-//  4. INSERT initial status-history entry
+//  3. [Optional] Validate VisitID belongs to the same patient
+//  4. INSERT appointment (with visit_id, appointment_type, branch_id)
+//  5. INSERT initial status-history entry
 //
-// The EXCLUDE USING GIST constraint on the appointments table is a second line
-// of defence that catches any concurrent insertion that slips past the FOR UPDATE.
+// The EXCLUDE USING GIST constraint is a second line of defence for scheduled
+// appointments — it catches any concurrent insertion that slips past the FOR UPDATE.
+// Walk-in appointments bypass slot conflict checks (they enter a queue, not a slot).
 func (r *AppointmentRepo) Create(ctx context.Context, input CreateAppointmentInput) (*model.Appointment, error) {
+	apptType := input.AppointmentType
+	if apptType == "" {
+		apptType = model.AppointmentTypeScheduled
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -88,31 +102,35 @@ func (r *AppointmentRepo) Create(ctx context.Context, input CreateAppointmentInp
 	defer tx.Rollback(ctx)
 
 	// 1. Lock any overlapping active appointment for the same doctor.
-	//    Returning a row means a conflict exists → reject early with a clean error.
-	var conflictID int64
-	err = tx.QueryRow(ctx, `
-		SELECT id FROM appointments
-		WHERE  doctor_id = $1
-		  AND  status IN ('created', 'confirmed')
-		  AND  tstzrange(start_at, end_at) && tstzrange($2, $3)
-		ORDER  BY id
-		LIMIT  1
-		FOR UPDATE`,
-		input.DoctorID, input.StartAt, input.EndAt).Scan(&conflictID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-	if err == nil {
-		return nil, apperrors.ErrSlotTaken
+	//    Walk-in appointments have no reserved slot — skip this check.
+	if apptType == model.AppointmentTypeScheduled {
+		var conflictID int64
+		err = tx.QueryRow(ctx, `
+			SELECT id FROM appointments
+			WHERE  doctor_id = $1
+			  AND  appointment_type = 'scheduled'
+			  AND  status IN ('created', 'confirmed', 'arrived')
+			  AND  tstzrange(start_at, end_at) && tstzrange($2, $3)
+			ORDER  BY id
+			LIMIT  1
+			FOR UPDATE`,
+			input.DoctorID, input.StartAt, input.EndAt).Scan(&conflictID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		if err == nil {
+			return nil, apperrors.ErrSlotTaken
+		}
 	}
 
 	// 2. Patient persistence.
+	//    If PatientID is pre-resolved (walk-in flow), skip patient upsert entirely.
 	//    When telegram_user_id IS NOT NULL we upsert — the patient may have booked before.
-	//    When it IS NULL (admin-panel booking) we do a plain INSERT because
-	//    PostgreSQL treats every NULL as distinct, so ON CONFLICT (telegram_user_id)
-	//    would never trigger and we'd silently create duplicate rows.
+	//    When it IS NULL (admin-panel booking) we do a plain INSERT.
 	var patientID int64
-	if input.PatientTelegramID != nil {
+	if input.PatientID != nil {
+		patientID = *input.PatientID
+	} else if input.PatientTelegramID != nil {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO patients (telegram_user_id, telegram_username, full_name, phone)
 			VALUES ($1, $2, $3, $4)
@@ -124,30 +142,80 @@ func (r *AppointmentRepo) Create(ctx context.Context, input CreateAppointmentInp
 			RETURNING id`,
 			input.PatientTelegramID, input.PatientTelegramUsername,
 			input.PatientName, input.PatientPhone).Scan(&patientID)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO patients (full_name, phone)
 			VALUES ($1, $2)
 			RETURNING id`,
 			input.PatientName, input.PatientPhone).Scan(&patientID)
-	}
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// 3. Insert appointment.
+	// 3. Resolve visit_id: validate a caller-supplied value, or auto-create a Visit
+	//    for scheduled appointments.
+	//
+	//    Both the Visit INSERT and the Appointment INSERT share this transaction.
+	//    If anything below fails the whole tx rolls back — no orphaned visits are
+	//    possible regardless of which step fails.
+	var resolvedVisitID *int64
+	if input.VisitID != nil {
+		// Validate that the provided Visit belongs to the same patient.
+		var vPatientID int64
+		err = tx.QueryRow(ctx,
+			`SELECT patient_id FROM visits WHERE id = $1`, *input.VisitID).Scan(&vPatientID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperrors.ErrNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+		if vPatientID != patientID {
+			return nil, apperrors.ErrVisitPatientMismatch
+		}
+		resolvedVisitID = input.VisitID
+	} else if apptType == model.AppointmentTypeScheduled && input.BranchID != nil {
+		// Auto-create a Visit for this scheduled appointment.
+		// status = 'scheduled', visit_type = 'scheduled'.
+		var vid int64
+		err = tx.QueryRow(ctx, `
+			INSERT INTO visits (patient_id, branch_id, visit_type, status)
+			VALUES ($1, $2, 'scheduled', 'scheduled')
+			RETURNING id`,
+			patientID, *input.BranchID).Scan(&vid)
+		if err != nil {
+			return nil, err
+		}
+		resolvedVisitID = &vid
+	}
+
+	// 4. Determine initial status: walk-in starts as 'arrived'; scheduled starts as 'created'.
+	initialStatus := model.StatusCreated
+	if apptType == model.AppointmentTypeWalkIn {
+		initialStatus = model.StatusArrived
+	}
+
+	// 5. Insert appointment.
 	var appt model.Appointment
 	err = tx.QueryRow(ctx, `
 		INSERT INTO appointments
-		       (patient_id, doctor_id, service_id, direction_id,
+		       (patient_id, doctor_id, service_id, direction_id, branch_id,
+		        visit_id, appointment_type,
 		        start_at, end_at, status, source, patient_comment)
-		VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $8)
-		RETURNING id, patient_id, doctor_id, service_id, direction_id,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id, visit_id, patient_id, doctor_id, service_id, direction_id, branch_id,
+		          appointment_type,
 		          start_at, end_at, status, source, patient_comment,
 		          created_at, updated_at`,
-		patientID, input.DoctorID, input.ServiceID, input.DirectionID,
-		input.StartAt, input.EndAt, input.Source, input.PatientComment).
-		Scan(&appt.ID, &appt.PatientID, &appt.DoctorID, &appt.ServiceID, &appt.DirectionID,
+		patientID, input.DoctorID, input.ServiceID, input.DirectionID, input.BranchID,
+		resolvedVisitID, string(apptType),
+		input.StartAt, input.EndAt, string(initialStatus), input.Source, input.PatientComment).
+		Scan(&appt.ID, &appt.VisitID, &appt.PatientID, &appt.DoctorID, &appt.ServiceID,
+			&appt.DirectionID, &appt.BranchID, &appt.AppointmentType,
 			&appt.StartAt, &appt.EndAt, &appt.Status, &appt.Source, &appt.PatientComment,
 			&appt.CreatedAt, &appt.UpdatedAt)
 	if err != nil {
@@ -163,12 +231,12 @@ func (r *AppointmentRepo) Create(ctx context.Context, input CreateAppointmentInp
 		return nil, err
 	}
 
-	// 4. Initial status-history entry.
+	// 6. Initial status-history entry.
 	if _, err = tx.Exec(ctx, `
 		INSERT INTO appointment_status_history
 		       (appointment_id, old_status, new_status, changed_by_user_id)
-		VALUES ($1, NULL, 'created', $2)`,
-		appt.ID, input.CreatedByUserID); err != nil {
+		VALUES ($1, NULL, $2, $3)`,
+		appt.ID, string(initialStatus), input.CreatedByUserID); err != nil {
 		return nil, err
 	}
 
@@ -180,8 +248,8 @@ func (r *AppointmentRepo) Create(ctx context.Context, input CreateAppointmentInp
 
 // appointmentSelectBase is the common SELECT … FROM … JOIN fragment shared by GetByID and List.
 const appointmentSelectBase = `
-	SELECT a.id, a.patient_id, a.doctor_id, a.service_id, a.direction_id,
-	       a.branch_id,
+	SELECT a.id, a.visit_id, a.patient_id, a.doctor_id, a.service_id, a.direction_id,
+	       a.branch_id, a.appointment_type,
 	       a.start_at, a.end_at, a.status, a.source, a.patient_comment,
 	       a.created_at, a.updated_at,
 	       p.full_name, p.phone, p.telegram_user_id,
@@ -196,8 +264,8 @@ const appointmentSelectBase = `
 
 func scanAppointmentDetail(d *AppointmentDetail, scan func(...any) error) error {
 	return scan(
-		&d.ID, &d.PatientID, &d.DoctorID, &d.ServiceID, &d.DirectionID,
-		&d.BranchID,
+		&d.ID, &d.VisitID, &d.PatientID, &d.DoctorID, &d.ServiceID, &d.DirectionID,
+		&d.BranchID, &d.AppointmentType,
 		&d.StartAt, &d.EndAt, &d.Status, &d.Source, &d.PatientComment,
 		&d.CreatedAt, &d.UpdatedAt,
 		&d.PatientName, &d.PatientPhone, &d.PatientTelegramID,
@@ -234,6 +302,11 @@ func (r *AppointmentRepo) List(ctx context.Context, filter AppointmentFilter) ([
 	if filter.PatientID != nil {
 		query += fmt.Sprintf(` AND a.patient_id = $%d`, n)
 		args = append(args, *filter.PatientID)
+		n++
+	}
+	if filter.VisitID != nil {
+		query += fmt.Sprintf(` AND a.visit_id = $%d`, n)
+		args = append(args, *filter.VisitID)
 		n++
 	}
 	if filter.BranchID != nil {

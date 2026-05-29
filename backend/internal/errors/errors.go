@@ -28,6 +28,10 @@ var (
 	// Appointment status machine
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
 
+	// Visit / booking mode
+	ErrInvalidBookingMode   = errors.New("booking mode does not allow this appointment type")
+	ErrVisitPatientMismatch = errors.New("visit does not belong to this patient or branch")
+
 	// Input validation
 	ErrInvalidInput = errors.New("invalid input")
 

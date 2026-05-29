@@ -81,6 +81,30 @@ func (m *mockAppointmentRepo) UpdateStatus(_ context.Context, _ int64, _, _ mode
 	return m.updateErr
 }
 
+// mockVisitRepo implements repository.VisitRepository for service-layer tests.
+type mockVisitRepo struct {
+	visit       *model.Visit
+	list        []model.Visit
+	err         error
+	updateErr   error
+}
+
+func (m *mockVisitRepo) Create(_ context.Context, _ repository.CreateVisitInput) (*model.Visit, error) {
+	return m.visit, m.err
+}
+func (m *mockVisitRepo) GetByID(_ context.Context, _ int64) (*model.Visit, error) {
+	return m.visit, m.err
+}
+func (m *mockVisitRepo) List(_ context.Context, _ repository.VisitFilter) ([]model.Visit, error) {
+	return m.list, m.err
+}
+func (m *mockVisitRepo) UpdateStatus(_ context.Context, _ int64, _ model.VisitStatus, _, _ *time.Time) error {
+	return m.updateErr
+}
+func (m *mockVisitRepo) UpdatePatientID(_ context.Context, _ int64, _ int64) error {
+	return m.updateErr
+}
+
 // mockDoctorServiceRepo implements repository.DoctorServiceRepository for service-layer tests.
 type mockDoctorServiceRepo struct {
 	assigned bool
@@ -165,7 +189,7 @@ func sampleCreateInput() CreateAppointmentInput {
 // doctorSvcRepo (assigned=true) and scheduleChecker (all-hours open).
 // Tests that need to override either should construct AppointmentService directly.
 func newApptSvc(apptRepo *mockAppointmentRepo, docRepo *mockDoctorRepo, svcRepo *mockServiceRepo) *AppointmentService {
-	return NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorServiceRepo{assigned: true}, openScheduleChecker())
+	return NewAppointmentService(apptRepo, &mockVisitRepo{}, docRepo, svcRepo, &mockDoctorServiceRepo{assigned: true}, openScheduleChecker())
 }
 
 // — Create —
@@ -247,6 +271,7 @@ func TestAppointmentCreate_ServiceWrongDoctor(t *testing.T) {
 	// Service exists and is active, but doctor is NOT assigned to it via junction.
 	svc := NewAppointmentService(
 		&mockAppointmentRepo{},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: false},
@@ -449,8 +474,9 @@ func TestAppointmentCancelByPatient_FromConfirmed(t *testing.T) {
 
 // — Complete —
 
-func TestAppointmentComplete_FromConfirmed(t *testing.T) {
-	detail := sampleApptDetail(model.StatusConfirmed)
+// Complete is now only reachable from 'arrived' (patient must check in first).
+func TestAppointmentComplete_FromArrived(t *testing.T) {
+	detail := sampleApptDetail(model.StatusArrived)
 	svc := newApptSvc(
 		&mockAppointmentRepo{detail: detail},
 		&mockDoctorRepo{},
@@ -459,6 +485,18 @@ func TestAppointmentComplete_FromConfirmed(t *testing.T) {
 
 	err := svc.Complete(context.Background(), 1, nil)
 	require.NoError(t, err)
+}
+
+func TestAppointmentComplete_FromConfirmed_Invalid(t *testing.T) {
+	detail := sampleApptDetail(model.StatusConfirmed)
+	svc := newApptSvc(
+		&mockAppointmentRepo{detail: detail},
+		&mockDoctorRepo{},
+		&mockServiceRepo{},
+	)
+
+	err := svc.Complete(context.Background(), 1, nil)
+	assert.ErrorIs(t, err, apperrors.ErrInvalidStatusTransition)
 }
 
 func TestAppointmentComplete_FromCreated(t *testing.T) {
@@ -475,8 +513,9 @@ func TestAppointmentComplete_FromCreated(t *testing.T) {
 
 // — MarkNoShow —
 
-func TestAppointmentMarkNoShow_FromConfirmed(t *testing.T) {
-	detail := sampleApptDetail(model.StatusConfirmed)
+// MarkNoShow is now only reachable from 'arrived'.
+func TestAppointmentMarkNoShow_FromArrived(t *testing.T) {
+	detail := sampleApptDetail(model.StatusArrived)
 	svc := newApptSvc(
 		&mockAppointmentRepo{detail: detail},
 		&mockDoctorRepo{},
@@ -485,6 +524,18 @@ func TestAppointmentMarkNoShow_FromConfirmed(t *testing.T) {
 
 	err := svc.MarkNoShow(context.Background(), 1, nil)
 	require.NoError(t, err)
+}
+
+func TestAppointmentMarkNoShow_FromConfirmed_Invalid(t *testing.T) {
+	detail := sampleApptDetail(model.StatusConfirmed)
+	svc := newApptSvc(
+		&mockAppointmentRepo{detail: detail},
+		&mockDoctorRepo{},
+		&mockServiceRepo{},
+	)
+
+	err := svc.MarkNoShow(context.Background(), 1, nil)
+	assert.ErrorIs(t, err, apperrors.ErrInvalidStatusTransition)
 }
 
 func TestAppointmentMarkNoShow_FromCreated(t *testing.T) {
@@ -519,12 +570,18 @@ func TestCanTransition_ValidPaths(t *testing.T) {
 		from model.AppointmentStatus
 		to   model.AppointmentStatus
 	}{
+		// created paths
 		{model.StatusCreated, model.StatusConfirmed},
+		{model.StatusCreated, model.StatusArrived},
 		{model.StatusCreated, model.StatusCancelledByPatient},
 		{model.StatusCreated, model.StatusCancelledByAdmin},
-		{model.StatusConfirmed, model.StatusCompleted},
-		{model.StatusConfirmed, model.StatusNoShow},
+		// confirmed paths
+		{model.StatusConfirmed, model.StatusArrived},
 		{model.StatusConfirmed, model.StatusCancelledByAdmin},
+		// arrived paths (terminal work)
+		{model.StatusArrived, model.StatusCompleted},
+		{model.StatusArrived, model.StatusNoShow},
+		{model.StatusArrived, model.StatusCancelledByAdmin},
 	}
 	for _, tc := range cases {
 		assert.True(t, canTransition(tc.from, tc.to), "expected valid: %s→%s", tc.from, tc.to)
@@ -542,6 +599,9 @@ func TestCanTransition_InvalidPaths(t *testing.T) {
 		{model.StatusCancelledByPatient, model.StatusConfirmed},
 		{model.StatusConfirmed, model.StatusCreated},
 		{model.StatusConfirmed, model.StatusCancelledByPatient},
+		// confirmed can no longer go directly to completed or no_show — must go through arrived
+		{model.StatusConfirmed, model.StatusCompleted},
+		{model.StatusConfirmed, model.StatusNoShow},
 	}
 	for _, tc := range cases {
 		assert.False(t, canTransition(tc.from, tc.to), "expected invalid: %s→%s", tc.from, tc.to)
@@ -591,6 +651,7 @@ func TestAppointmentCreate_ConcurrentSlot(t *testing.T) {
 
 	svc := NewAppointmentService(
 		&slotOnceRepo{},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: sampleDoctorWithDir()},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
@@ -650,6 +711,7 @@ func TestAppointmentCreate_DayOff_BlocksBooking(t *testing.T) {
 	}
 	svc := NewAppointmentService(
 		&mockAppointmentRepo{},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
@@ -680,6 +742,7 @@ func TestAppointmentCreate_CustomHours_InsideRange(t *testing.T) {
 	}
 	svc := NewAppointmentService(
 		&mockAppointmentRepo{appt: sampleAppt()},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
@@ -706,6 +769,7 @@ func TestAppointmentCreate_CustomHours_OutsideRange(t *testing.T) {
 	}
 	svc := NewAppointmentService(
 		&mockAppointmentRepo{},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
@@ -730,6 +794,7 @@ func TestAppointmentCreate_NonWorkingDay(t *testing.T) {
 	}
 	svc := NewAppointmentService(
 		&mockAppointmentRepo{},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
@@ -755,6 +820,7 @@ func TestAppointmentCreate_DeleteException_RestoresBooking(t *testing.T) {
 	}
 	svc := NewAppointmentService(
 		&mockAppointmentRepo{appt: sampleAppt()},
+		&mockVisitRepo{},
 		&mockDoctorRepo{doctor: doc},
 		&mockServiceRepo{svc: activeSvc()},
 		&mockDoctorServiceRepo{assigned: true},
@@ -767,3 +833,129 @@ func TestAppointmentCreate_DeleteException_RestoresBooking(t *testing.T) {
 
 // ptrTime is a helper used by working-hours tests.
 func ptrTime(t time.Time) *time.Time { return &t }
+
+// ── captureCreateRepo ──────────────────────────────────────────────────────────
+//
+// Captures the CreateAppointmentInput passed to Create so tests can assert that
+// the service correctly resolved branch_id before forwarding to the repository.
+
+type captureCreateRepo struct {
+	captured  repository.CreateAppointmentInput
+	appt      *model.Appointment
+	createErr error
+}
+
+func (r *captureCreateRepo) Create(_ context.Context, input repository.CreateAppointmentInput) (*model.Appointment, error) {
+	r.captured = input
+	return r.appt, r.createErr
+}
+func (r *captureCreateRepo) GetByID(_ context.Context, _ int64) (*repository.AppointmentDetail, error) {
+	return nil, nil
+}
+func (r *captureCreateRepo) List(_ context.Context, _ repository.AppointmentFilter) ([]repository.AppointmentDetail, error) {
+	return nil, nil
+}
+func (r *captureCreateRepo) UpdateStatus(_ context.Context, _ int64, _, _ model.AppointmentStatus, _ *int64, _ *string) error {
+	return nil
+}
+
+// ── Visit auto-creation tests ──────────────────────────────────────────────────
+
+// TestAppointmentCreate_Scheduled_AutoCreatesVisit verifies that a scheduled
+// appointment returned from Create always carries a non-nil visit_id.
+// The mock repo simulates the repo-level Visit auto-creation by returning an
+// appointment that already has VisitID set (as the real repo would after its
+// internal INSERT INTO visits within the same transaction).
+func TestAppointmentCreate_Scheduled_AutoCreatesVisit(t *testing.T) {
+	vid := int64(42)
+	apptWithVisit := sampleAppt()
+	apptWithVisit.VisitID = &vid
+
+	doc := sampleDoctorWithDir()
+	doc.BranchID = int64Ptr(1)
+
+	svc := newApptSvc(
+		&mockAppointmentRepo{appt: apptWithVisit},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+	)
+
+	result, err := svc.Create(context.Background(), sampleCreateInput())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.VisitID, "scheduled appointment must have visit_id")
+	assert.Equal(t, vid, *result.VisitID, "appointment must be linked to the created visit")
+}
+
+// TestAppointmentCreate_Scheduled_VisitLinked is the same assertion expressed
+// differently: VisitID on the returned appointment matches what the repo set.
+func TestAppointmentCreate_Scheduled_VisitLinked(t *testing.T) {
+	vid := int64(7)
+	apptWithVisit := sampleAppt()
+	apptWithVisit.VisitID = &vid
+
+	doc := sampleDoctorWithDir()
+	doc.BranchID = int64Ptr(3)
+
+	svc := newApptSvc(
+		&mockAppointmentRepo{appt: apptWithVisit},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+	)
+
+	result, err := svc.Create(context.Background(), sampleCreateInput())
+	require.NoError(t, err)
+	assert.Equal(t, vid, *result.VisitID)
+}
+
+// TestAppointmentCreate_Scheduled_BranchFromDoctor verifies that when
+// input.BranchID is nil the service resolves it from the doctor's BranchID and
+// forwards it to the repo so the repo can create the Visit.
+// A nil BranchID in the repo input would silently skip Visit creation;
+// a non-nil value is the contract signal to auto-create.
+func TestAppointmentCreate_Scheduled_BranchFromDoctor(t *testing.T) {
+	vid := int64(5)
+	apptWithVisit := sampleAppt()
+	apptWithVisit.VisitID = &vid
+
+	doc := sampleDoctorWithDir()
+	doc.BranchID = int64Ptr(9)
+
+	cap := &captureCreateRepo{appt: apptWithVisit}
+	svc := NewAppointmentService(
+		cap,
+		&mockVisitRepo{},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+		&mockDoctorServiceRepo{assigned: true},
+		openScheduleChecker(),
+	)
+
+	input := sampleCreateInput()
+	// input.BranchID intentionally nil — must be resolved from doctor.
+
+	_, err := svc.Create(context.Background(), input)
+	require.NoError(t, err)
+	require.NotNil(t, cap.captured.BranchID, "service must forward resolved branch_id to repo")
+	assert.Equal(t, int64(9), *cap.captured.BranchID)
+}
+
+// TestAppointmentCreate_Scheduled_RepoError_NoOrphan verifies that when the repo
+// returns an error the service propagates it cleanly.
+// Atomicity guarantee: the Visit INSERT and Appointment INSERT are in the same
+// DB transaction inside AppointmentRepo.Create; a transaction rollback removes
+// both rows — orphaned visits are architecturally impossible.
+func TestAppointmentCreate_Scheduled_RepoError_NoOrphan(t *testing.T) {
+	doc := sampleDoctorWithDir()
+	doc.BranchID = int64Ptr(1)
+
+	svc := newApptSvc(
+		&mockAppointmentRepo{err: apperrors.ErrSlotTaken},
+		&mockDoctorRepo{doctor: doc},
+		&mockServiceRepo{svc: activeSvc()},
+	)
+
+	_, err := svc.Create(context.Background(), sampleCreateInput())
+	assert.ErrorIs(t, err, apperrors.ErrSlotTaken,
+		"repo error must propagate; transaction rollback prevents orphaned visit")
+}

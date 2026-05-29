@@ -149,8 +149,24 @@ func (m *mockDoctorSvcRepo) BulkReplace(_ context.Context, _ int64, _ []int64) e
 	return m.err
 }
 
+// noopVisitRepo satisfies repository.VisitRepository with no-op implementations
+// for handler tests that don't exercise visit behaviour.
+type noopVisitRepo struct{}
+
+func (n *noopVisitRepo) Create(_ context.Context, _ repository.CreateVisitInput) (*model.Visit, error) {
+	return nil, nil
+}
+func (n *noopVisitRepo) GetByID(_ context.Context, _ int64) (*model.Visit, error) { return nil, nil }
+func (n *noopVisitRepo) List(_ context.Context, _ repository.VisitFilter) ([]model.Visit, error) {
+	return nil, nil
+}
+func (n *noopVisitRepo) UpdateStatus(_ context.Context, _ int64, _ model.VisitStatus, _, _ *time.Time) error {
+	return nil
+}
+func (n *noopVisitRepo) UpdatePatientID(_ context.Context, _ int64, _ int64) error { return nil }
+
 func newAppointmentRouter(apptRepo *mockApptRepo, docRepo *mockDoctorRepo, svcRepo *mockServiceRepo, botSecret string) http.Handler {
-	svc := service.NewAppointmentService(apptRepo, docRepo, svcRepo, &mockDoctorSvcRepo{assigned: true}, &openApptScheduleChecker{})
+	svc := service.NewAppointmentService(apptRepo, &noopVisitRepo{}, docRepo, svcRepo, &mockDoctorSvcRepo{assigned: true}, &openApptScheduleChecker{})
 	h := NewAppointmentHandler(svc)
 
 	r := chi.NewRouter()
@@ -474,9 +490,10 @@ func TestAdminCancel_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
 
+// Complete and MarkNoShow now require 'arrived' status (patient must check in first).
 func TestAdminComplete_Success(t *testing.T) {
 	router := newAppointmentRouter(
-		&mockApptRepo{detail: sampleAdminDetailWithStatus(model.StatusConfirmed)},
+		&mockApptRepo{detail: sampleAdminDetailWithStatus(model.StatusArrived)},
 		&mockDoctorRepo{},
 		&mockServiceRepo{},
 		testBotSecret,
@@ -487,7 +504,7 @@ func TestAdminComplete_Success(t *testing.T) {
 
 func TestAdminMarkNoShow_Success(t *testing.T) {
 	router := newAppointmentRouter(
-		&mockApptRepo{detail: sampleAdminDetailWithStatus(model.StatusConfirmed)},
+		&mockApptRepo{detail: sampleAdminDetailWithStatus(model.StatusArrived)},
 		&mockDoctorRepo{},
 		&mockServiceRepo{},
 		testBotSecret,
